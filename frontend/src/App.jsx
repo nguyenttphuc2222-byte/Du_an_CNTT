@@ -1,15 +1,64 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
 
+const STORAGE_KEY = "conduct_session";
+function readSession() {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data.expiresAt || Date.now() >= data.expiresAt) {
+      sessionStorage.removeItem(STORAGE_KEY);
+      return null;
+    }
+    return data;
+  } catch {
+    sessionStorage.removeItem(STORAGE_KEY);
+    return null;
+  }
+}
+function navigate(path) {
+  if (window.location.pathname !== path) window.history.replaceState({}, "", path);
+}
 export default function App() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [loggedInUser, setLoggedInUser] = useState(null);
+  const [session, setSession] = useState(readSession);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    const verify = async () => {
+      const current = readSession();
+      if (!current) {
+        if (active) { setSession(null); setChecking(false); navigate("/login"); }
+        return;
+      }
+      try {
+        const res = await fetch(`${API_BASE_URL}/auth/me`, {
+          headers: { Authorization: `Bearer ${current.accessToken}` },
+        });
+        if (!res.ok) throw new Error("Phiên không hợp lệ");
+        if (active) { setSession(current); setChecking(false); navigate("/dashboard"); }
+      } catch {
+        sessionStorage.removeItem(STORAGE_KEY);
+        if (active) { setSession(null); setChecking(false); navigate("/login"); }
+      }
+    };
+    verify();
+    const timer = window.setInterval(() => {
+      if (session && !readSession()) {
+        setSession(null);
+        navigate("/login");
+      }
+    }, 1000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [session?.accessToken]);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -28,8 +77,11 @@ export default function App() {
         throw new Error(data.detail || "Không thể đăng nhập. Vui lòng thử lại.");
       }
 
-      // Keep token in memory for this starter; refreshing signs the user out.
-      setLoggedInUser({ ...data.user, accessToken: data.access_token });
+      const next = { user: data.user, accessToken: data.access_token,
+        expiresAt: Date.now() + 10 * 60 * 1000 };
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      setSession(next);
+      navigate("/dashboard");
       setPassword("");
     } catch (err) {
       setError(
@@ -43,39 +95,16 @@ export default function App() {
   }
 
   function logout() {
-    setLoggedInUser(null);
+    sessionStorage.removeItem(STORAGE_KEY);
+    setSession(null);
+    navigate("/login");
     setUsername("");
     setPassword("");
     setError("");
   }
 
-  if (loggedInUser) {
-    return (
-      <main className="page-shell">
-        <section className="welcome-card" aria-live="polite">
-          <div className="brand-mark large">DR</div>
-          <p className="eyebrow">ĐĂNG NHẬP THÀNH CÔNG</p>
-          <h1>Xin chào, {loggedInUser.full_name}!</h1>
-          <p className="welcome-copy">
-            Bạn đã đăng nhập vào bản thử nghiệm của Hệ thống quản lý điểm rèn luyện.
-          </p>
-          <div className="user-detail">
-            <span>Tên đăng nhập</span>
-            <strong>{loggedInUser.username}</strong>
-          </div>
-          <div className="user-detail">
-            <span>Vai trò</span>
-            <strong>{roleLabel(loggedInUser.role)}</strong>
-          </div>
-          <p className="prototype-note">
-            Đây mới là màn hình xác nhận đăng nhập. Dashboard và các chức năng
-            nghiệp vụ sẽ được xây dựng ở bước tiếp theo.
-          </p>
-          <button className="primary-button" onClick={logout}>Đăng xuất</button>
-        </section>
-      </main>
-    );
-  }
+  if (checking) return <main className="page-shell"><p>Đang kiểm tra phiên đăng nhập...</p></main>;
+  if (session) return <Dashboard user={session.user} logout={logout} expiresAt={session.expiresAt} />;
 
   return (
     <main className="page-shell">
@@ -185,4 +214,49 @@ function roleLabel(role) {
     admin: "Quản trị viên",
   };
   return labels[role] || role;
+}
+
+const CRITERIA = [
+  { number: "I", name: "Ý thức học tập", max: 20 },
+  { number: "II", name: "Chấp hành pháp luật và nội quy", max: 25 },
+  { number: "III", name: "Chấp hành nội quy, quy chế, quy định trong Trường", max: 20 },
+  { number: "IV", name: "Tham gia hoạt động chính trị, xã hội, văn hóa, văn nghệ, thể thao và phong trào", max: 20 },
+  { number: "V", name: "Tham gia hoạt động cộng đồng, công tác xã hội, công tác tình nguyện", max: 20 },
+];
+function Dashboard({ user, logout, expiresAt }) {
+  const [semester, setSemester] = useState("2026-1");
+  const [tab, setTab] = useState("activities");
+  const [remaining, setRemaining] = useState(Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000)));
+  useEffect(() => {
+    const interval = setInterval(() => setRemaining(Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000))), 1000);
+    return () => clearInterval(interval);
+  }, [expiresAt]);
+  const minutes = String(Math.floor(remaining / 60)).padStart(2, "0");
+  const seconds = String(remaining % 60).padStart(2, "0");
+  return (
+    <div className="dashboard-layout">
+      <aside className="dashboard-sidebar">
+        <div className="dashboard-logo">DR</div>
+        <div className="dashboard-nav">
+          <div className="nav-active">▦ <span>Điểm rèn luyện</span></div>
+          <div>▤ <span>Hoạt động</span></div>
+          <div>☷ <span>Lịch sử điểm</span></div>
+          <div>◉ <span>Thông báo</span></div>
+        </div>
+        <div className="sidebar-footer">Bản thử nghiệm · 0.2</div>
+      </aside>
+      <div className="dashboard-main">
+        <header className="dashboard-header">
+          <div><p className="dashboard-kicker">HỆ THỐNG QUẢN LÝ ĐIỂM RÈN LUYỆN</p><h1>Trang chủ</h1></div>
+          <div className="dashboard-account"><span>{user.full_name}<small>{roleLabel(user.role)} · {user.username}</small></span><button onClick={logout}>Đăng xuất</button></div>
+        </header>
+        <div className="session-strip">Phiên đăng nhập còn <strong>{minutes}:{seconds}</strong> · Hết 10 phút sẽ yêu cầu đăng nhập lại.</div>
+        <section className="semester-bar"><label htmlFor="semester">Học kỳ:</label><select id="semester" value={semester} onChange={e => setSemester(e.target.value)}><option value="2026-1">Học kỳ 1 / 2026 - 2027</option><option value="2025-2">Học kỳ 2 / 2025 - 2026</option></select><span className="sample-badge">Dữ liệu minh họa</span></section>
+        <section className="dashboard-panel">
+          <div className="dashboard-tabs"><button className={tab === "activities" ? "selected" : ""} onClick={() => setTab("activities")}>Nội dung hoạt động</button><button className={tab === "results" ? "selected" : ""} onClick={() => setTab("results")}>Kết quả đánh giá điểm rèn luyện</button></div>
+          {tab === "activities" ? <div className="criteria-content">{CRITERIA.map(group => <section className="criteria-section" key={group.number}><h2>{group.number}. {group.name} <span>(Tối đa {group.max} điểm)</span></h2><div className="table-scroll"><table><thead><tr><th>STT</th><th>Tên sự kiện</th><th>Thời gian tổ chức</th><th>Điểm (+/-)</th><th>Phản hồi</th></tr></thead><tbody><tr><td colSpan="5" className="empty-cell">Chưa có hoạt động được ghi nhận trong dữ liệu thử nghiệm.</td></tr></tbody></table></div></section>)}</div> : <div className="results-placeholder"><h2>Kết quả đánh giá điểm rèn luyện</h2><p>Chưa có dữ liệu đánh giá cho học kỳ này. Khi tích hợp API điểm rèn luyện, kết quả sẽ hiển thị tại đây.</p></div>}
+        </section>
+      </div>
+    </div>
+  );
 }

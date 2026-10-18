@@ -188,3 +188,20 @@ code { padding: 2px 5px; border-radius: 4px; background: #e8f0e9; color: #254b36
   .login-card { padding: 30px 26px 24px; }
   .brand-area { margin-bottom: 35px; }
 }
+
+/* Dashboard - responsive prototype inspired by the provided portal layout */
+.dashboard-layout { min-height: 100vh; display:flex; background:#f2f5f7; color:#183c39; }
+.dashboard-sidebar { width:220px; background:#123f36; color:white; display:flex; flex-direction:column; padding:22px 12px; flex-shrink:0; }
+.dashboard-logo { background:#fff; color:#174b3b; font-weight:800; width:50px; height:50px; border-radius:13px; display:grid; place-items:center; margin:0 0 35px 10px; }
+.dashboard-nav { display:grid; gap:8px; }.dashboard-nav>div { padding:14px 12px; border-radius:10px; display:flex; gap:12px; align-items:center; font-size:13px; }.dashboard-nav .nav-active { background:#2d6a58; font-weight:700; }
+.sidebar-footer { margin-top:auto; font-size:11px; opacity:.65; padding:12px; }
+.dashboard-main { flex:1; min-width:0; padding:26px 28px 50px; }
+.dashboard-header { display:flex; justify-content:space-between; align-items:center; gap:20px; margin-bottom:18px; }
+.dashboard-header h1 { margin:4px 0; font-size:28px; }.dashboard-kicker { font-size:11px; letter-spacing:1px; font-weight:700; color:#648179; margin:0; }
+.dashboard-account { display:flex; gap:18px; align-items:center; font-weight:700; font-size:13px; }.dashboard-account small { display:block; font-size:11px; color:#718078; font-weight:400; margin-top:4px; }.dashboard-account button { border:1px solid #cddbd3; border-radius:9px; padding:10px 13px; background:white; color:#174b3b; font-weight:700; }
+.session-strip { padding:11px 16px; border:1px solid #cfe0d7; border-radius:9px; background:#e9f4ed; color:#285a48; font-size:12px; margin-bottom:18px; }
+.semester-bar { background:white; padding:20px; display:flex; align-items:center; gap:16px; border-radius:12px; margin-bottom:20px; border:1px solid #e1e8e4; }.semester-bar label { font-weight:700; font-size:13px; }.semester-bar select { border:1px solid #dce5df; border-radius:7px; padding:12px; background:white; color:#344b44; }.sample-badge { margin-left:auto; font-size:11px; color:#7b6b30; background:#fff5d8; padding:7px 10px; border-radius:20px; }
+.dashboard-panel { background:white; border:1px solid #e1e8e4; border-radius:12px; overflow:hidden; }.dashboard-tabs { display:flex; border-bottom:1px solid #dce5df; }.dashboard-tabs button { flex:1; background:#f8faf9; border:0; padding:18px; color:#527c71; font-weight:600; }.dashboard-tabs button.selected { background:white; color:#174b3b; box-shadow:inset 0 -3px #1e7156; }
+.criteria-content { padding:8px 20px 30px; }.criteria-section h2 { color:#087a94; font-size:17px; margin:24px 0 12px; line-height:1.5; }.criteria-section h2 span { color:#e35b47; }.table-scroll { overflow-x:auto; }.criteria-section table { border-collapse:collapse; width:100%; min-width:650px; font-size:12px; }.criteria-section th { background:#c4dcfa; color:#20364a; padding:12px 10px; border:1px solid #d5e4f5; }.criteria-section td { border:1px solid #e1e6e9; padding:18px; }.criteria-section th:nth-child(2) { width:56%; }.empty-cell { text-align:center; color:#82908b; background:#fcfdfd; }.results-placeholder { padding:48px 24px; text-align:center; color:#667a73; }.results-placeholder h2 { color:#174b3b; }
+@media(max-width:800px) { .dashboard-sidebar { width:65px; }.dashboard-nav span,.sidebar-footer { display:none; }.dashboard-logo { margin-left:0; width:40px; height:40px; }.dashboard-main { padding:16px; }.dashboard-header { align-items:flex-start; }.dashboard-header h1 { font-size:22px; }.dashboard-account { flex-direction:column; align-items:flex-end; gap:7px; }.semester-bar { flex-wrap:wrap; }.sample-badge { margin-left:0; }.criteria-content { padding:8px 12px; } }
+@media(max-width:480px) { .dashboard-header { flex-direction:column; }.dashboard-account { flex-direction:row; align-items:center; }.dashboard-tabs button { font-size:11px; padding:12px 6px; } }
