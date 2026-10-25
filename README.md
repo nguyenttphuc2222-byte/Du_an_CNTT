@@ -129,11 +129,7 @@ npm run test:e2e
 - `.vscode`: cấu hình F5 và task. `Dockerfile`/`compose.yaml`: container và volume.
 
 Các kiểm thử Google sử dụng phản hồi giả lập để kiểm tra luồng và quyền. Việc đăng nhập/gọi API bằng tài khoản thật cần credentials, consent và quyền tổ chức của bạn. Dữ liệu mẫu không đồng bộ với hệ thống điểm chính thức TDTU.
-## Kết quả xác minh bản bàn giao
 
-Đã kiểm tra trên Windows với Node.js 24, trình duyệt Edge headless và Docker Desktop Linux containers:
-
-- 46/46 kiểm thử tự động: nghiệp vụ, phân quyền, OAuth giả lập, Sheets/Drive giả lập, HTTP và nhập/xuất tệp.
 - Kiểm thử trình duyệt: đăng nhập giảng viên/sinh viên, 9 màn, tạo hoạt động, kê khai, nhập XLSX, đối soát 40 + 10 → 50, nhập trùng, tải báo cáo, đổi học kỳ và giao diện điện thoại.
 - Docker build thành công, healthcheck healthy; kiểm tra API, xuất XLSX và xác nhận dữ liệu còn nguyên sau restart.
 
