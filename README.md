@@ -90,20 +90,6 @@ Tải minh chứng nhận PDF/PNG/JPEG/WEBP tối đa 5 MB; nút tải nói rõ 
 
 Phiên ứng dụng và token Google chỉ lưu trong RAM, không ghi token ra SQLite hay log. Khởi động lại máy chủ cần đăng nhập/kết nối lại; điểm và kê khai vẫn được lưu bền vững. Không cần API key Google Picker. Google Forms, Gmail, Calendar và điểm danh QR chưa thuộc phạm vi bản demo này.
 
-## Kịch bản demo khoảng 5–10 phút
-
-1. Ở màn đăng nhập, chọn **Không gian sinh viên** với email `523h0080...`: xem 40 điểm chính thức, 10 điểm đang chờ, 50 điểm dự kiến. Kê khai “Ngày hội tình nguyện xanh” đã có sẵn.
-2. Đăng xuất rồi chọn **Không gian giảng viên** với email `523h0025...`. Thử danh sách sinh viên, lọc lớp và xem kê khai. “Đã kiểm tra” vẫn là phần chờ, chưa thành điểm chính thức.
-3. Vào **Nhập dữ liệu**, tải **Tệp kịch bản demo**, chọn tệp vừa tải và kiểm tra. Có thể dùng `samples/du-lieu-chinh-thuc-demo.csv`.
-4. Ghi nhận một khoản mới. Hệ thống tự đối soát khi trùng sinh viên, học kỳ, mã hoạt động, mục điểm và số điểm, đồng thời chỉ có một cặp khớp.
-5. Xem lại sinh viên: 50 điểm chính thức, 0 điểm chờ, 50 điểm dự kiến.
-6. Nhập lại cùng tệp, xác nhận bỏ qua trùng. Kết quả không tăng thêm. Nếu cùng `sourceId` nhưng nội dung khác, toàn bộ đợt nhập bị từ chối.
-7. Mở **Đối soát** để xem các trường hợp cần xác minh thủ công. Tên gần giống chỉ tạo gợi ý; số điểm khác nhau cần xác nhận thủ công.
-8. Mở **Báo cáo**, lọc lớp và chọn cơ sở chính thức/dự kiến, tải Excel/CSV. Khi có Google thật, thử nhập Sheet theo URL, lưu báo cáo lên Sheets và tải minh chứng Drive.
-9. Chọn HK2 để thấy dữ liệu được tách theo kỳ; bảng theo dõi năm học trình bày riêng hai học kỳ.
-
-Luồng 40 → 50 chỉ xảy ra một lần cho mỗi cơ sở dữ liệu mới. Sau khi đã nhập, lịch sử vẫn giữ ở 50; bản demo không tự đặt lại dữ liệu khi khởi động. Để diễn lại từ đầu có thể dùng một `DATA_DIR` mới khi chạy Node, hoặc một project name Compose mới sau khi dừng bản cũ.
-
 ## Quy tắc điểm và học kỳ
 
 Quy tắc hiện tại lấy từ PDF TDTU do người dùng cung cấp, hiệu lực năm học 2025–2026. Xem `docs/QUY_TAC_CHAM_DIEM.md` và tải lại mẫu nhập có `criterionId` trong ứng dụng.
