@@ -1,0 +1,27 @@
+{
+  "name": "tdtu-conduct-demo",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Ứng dụng demo quản lý điểm rèn luyện TDTU",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/server.mjs",
+    "dev": "node --watch --env-file-if-exists=.env src/server.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check src/server.mjs && node --check src/files.mjs && node --check src/auth.mjs && node --check src/google.mjs && node --check src/store.mjs && node --check src/regulations.mjs && node --check public/app.js",
+    "test:e2e": "node scripts/browser-check.mjs",
+    "test:browser": "node scripts/browser-check.mjs",
+    "format": "prettier --write \"src/**/*.mjs\" \"public/**/*.{html,css,js}\" \"tests/**/*.mjs\" \"scripts/**/*.mjs\" \"*.{json,md,yaml}\" \".vscode/*.json\""
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "google-auth-library": "^10.3.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "prettier": "^3.9.10"
+  }
+}

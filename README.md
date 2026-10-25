@@ -1,167 +1,154 @@
-# Hệ thống quản lý điểm rèn luyện — Student Conduct System
+> **Bản cập nhật quy chế:** xem [hướng dẫn kiểm thử mới](HUONG_DAN_KIEM_THU.md) và [quy tắc đã tích hợp](docs/QUY_TAC_CHAM_DIEM.md). Dùng mẫu nhập mới có `criterionId`; các khoản cũ cần đối chiếu, không tự đổi nhóm.
 
-Dự án web quản lý điểm rèn luyện sinh viên, đang phát triển theo từng giai đoạn. **Phiên bản hiện tại** đã có đăng nhập, trang chủ minh họa và kiểm soát phiên JWT trong 10 phút. Dữ liệu hoạt động/điểm trên trang chủ hiện là **dữ liệu mẫu**, chưa kết nối với dữ liệu điểm rèn luyện thực tế.
+# Ứng dụng demo quản lý điểm rèn luyện TDTU
 
-## 1. Công nghệ
+Bản demo chạy trên máy bằng Node.js hoặc Docker, có giao diện tiếng Việt cho sinh viên và giảng viên, lưu dữ liệu SQLite và kết nối Google OAuth Internal, Google Sheets, Google Drive. Dữ liệu tên, hoạt động và điểm ban đầu là minh họa; hai email demo được cấu hình theo yêu cầu.
 
-| Thành phần | Công nghệ |
-| --- | --- |
-| Frontend | React (JavaScript), Vite |
-| Backend | Python, FastAPI |
-| Database | MySQL |
-| Xác thực | Mật khẩu băm, JWT Bearer |
+## Chạy nhanh bằng Docker
 
-## 2. Chức năng hiện tại
-
-- Đăng nhập bằng tên đăng nhập và mật khẩu qua `POST /api/v1/auth/login`.
-- Trang chủ `/dashboard`: menu bên trái, lựa chọn học kỳ, tab nội dung hoạt động/kết quả đánh giá và bảng điểm minh họa.
-- Đăng xuất và điều hướng về `/login`.
-- Bảo vệ trang `/dashboard`: chưa đăng nhập hoặc phiên hết hạn sẽ chuyển về `/login`.
-- Phiên đăng nhập **10 phút tính từ lúc đăng nhập**, không tự gia hạn khi thao tác. Token được lưu trong `sessionStorage` của tab: reload trước hạn vẫn giữ phiên, đóng tab sẽ mất phiên.
-- Khi tải lại trang, frontend gọi `GET /api/v1/auth/me` để xác minh JWT; backend từ chối token không hợp lệ hoặc đã hết hạn.
-
-> Đây là bản thử nghiệm local, chưa phải hệ thống xác thực sẵn sàng triển khai thực tế. Các chức năng quản lý hoạt động, chấm điểm, phê duyệt và khiếu nại sẽ được phát triển sau.
-
-## 3. Cấu trúc thư mục
-
-```text
-Du_an_CNTT/
-├── backend/
-│   ├── app/
-│   │   ├── api/v1/endpoints/auth.py
-│   │   ├── core/config.py
-│   │   ├── db/
-│   │   ├── models/
-│   │   ├── schemas/
-│   │   ├── main.py
-│   │   └── seed_demo_user.py
-│   ├── .env.example
-│   └── requirements.txt
-├── database/
-│   └── schema.sql
-├── frontend/
-│   ├── src/
-│   │   ├── App.jsx
-│   │   ├── main.jsx
-│   │   └── styles.css
-│   ├── .env.example
-│   ├── package.json
-│   └── vite.config.js
-├── .gitignore
-└── README.md
-```
-
-## 4. Yêu cầu môi trường
-
-- Python 3.11 trở lên
-- Node.js (bản LTS) và npm
-- MySQL Server 8 trở lên (hoặc bản tương thích)
-- Git (nếu làm việc nhóm)
-
-Các lệnh dưới đây dành cho **PowerShell trên Windows**, chạy từ thư mục gốc dự án.
-
-## 5. Cài đặt và chạy local
-
-### 5.1. Tạo database
-
-Mở MySQL Workbench hoặc MySQL CLI và chạy file `database/schema.sql`. Script tạo database `student_conduct` và bảng `users` phục vụ đăng nhập.
-
-### 5.2. Backend FastAPI
+Cài và mở Docker Desktop ở chế độ Linux containers. Mở thư mục này trong VS Code, mở Terminal rồi chạy:
 
 ```powershell
-cd backend
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+docker compose up -d --build
 ```
 
-Mở `backend/.env` và thay thông tin MySQL cùng khóa JWT bằng giá trị **riêng trên máy**. Ví dụ cấu hình:
-
-```dotenv
-DATABASE_URL=mysql+pymysql://root:YOUR_PASSWORD@127.0.0.1:3306/student_conduct
-JWT_SECRET_KEY=REPLACE_WITH_A_LONG_RANDOM_SECRET
-JWT_ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=10
-CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
-```
-
-Nếu đã có `.env` hoạt động, **không chép đè**; chỉ kiểm tra `ACCESS_TOKEN_EXPIRE_MINUTES=10`.
-
-Tạo tài khoản demo lần đầu và khởi động API:
+Mở **http://localhost:3000**. Chưa có credentials vẫn dùng được các nút tài khoản minh họa. Có thể nhấp đúp `start-docker.cmd` để chạy cùng lệnh.
 
 ```powershell
-python -m app.seed_demo_user
-python -m uvicorn app.main:app --reload
+docker compose logs -f app
+docker compose down
 ```
 
-Backend: <http://127.0.0.1:8000>  
-Swagger API: <http://127.0.0.1:8000/docs>
+`down` dừng ứng dụng và giữ dữ liệu. SQLite nằm trong volume `tdtu-conduct-demo_conduct-data`; không xóa volume nếu cần giữ dữ liệu. Thư mục `data` khi chạy Node và volume khi chạy Docker là hai cơ sở dữ liệu riêng.
 
-Tài khoản demo local (nếu đã chạy seed):
+## Chạy bằng VS Code và Node.js
 
-- Tên đăng nhập: `student1`
-- Mật khẩu: `Student@123`
-
-**Không dùng thông tin đăng nhập demo trên môi trường thật.**
-
-### 5.3. Frontend React
-
-Mở terminal thứ hai tại thư mục gốc dự án:
+Cần Node.js **24 trở lên**. Mở `TDTU Conduct Demo.code-workspace`, hoặc mở chính thư mục `tdtu-conduct-demo` trong VS Code.
 
 ```powershell
-cd frontend
-npm install
-Copy-Item .env.example .env
-npm run dev
+npm ci
+npm start
 ```
 
-Nếu đã có `frontend/.env` thì giữ nguyên. Đảm bảo file có:
+Mở **http://localhost:3000**. Dùng `npm.cmd` nếu PowerShell chặn `npm.ps1`. Có thể nhấp đúp `start-demo.cmd`; script sẽ cài thư viện nếu chưa có rồi chạy server. Trong VS Code nhấn **F5**, chọn “Chạy demo TDTU” để debug. Các task cài thư viện, kiểm thử và Docker nằm trong Terminal → Run Task.
 
-```dotenv
-VITE_API_BASE_URL=http://127.0.0.1:8000/api/v1
+Chỉ chạy một phiên Node hoặc Docker trên cổng 3000. Muốn chạy Node ở cổng khác, đặt đồng thời `PORT` và `BASE_URL` trong `.env`, rồi cập nhật redirect URI tương ứng của Google.
+
+## Tài khoản và phân quyền
+523h0080@student.tdtu.edu.vn - phuc123456@
+523h0025@student.tdtu.edu.vn - KTPM523CaoHau
+
+| Email                          | Vai trò trong ứng dụng                                                     |
+| ------------------------------ | -------------------------------------------------------------------------- |
+| `523h0080@student.tdtu.edu.vn` | Sinh viên, liên kết hồ sơ có 40 điểm chính thức và 10 điểm kê khai ban đầu |
+| `523h0025@student.tdtu.edu.vn` | Giảng viên, được cấp qua `LECTURER_EMAILS` ở máy chủ                       |
+
+Các nút minh họa không xác thực quyền sở hữu email; chúng chỉ dùng với bộ dữ liệu demo. Đăng nhập Google thật sẽ xác minh tài khoản và liên kết cùng hồ sơ, giữ lịch sử điểm. `DEMO_ENABLED=false` tắt toàn bộ đường đăng nhập minh họa; khi đó phải cấu hình Google trước.
+
+Vai trò được kiểm tra tại backend ở từng thao tác. Sinh viên chỉ xem và kê khai cho chính mình, không được nhập điểm chính thức, duyệt hay xuất dữ liệu toàn khoa. Phiên đăng nhập minh họa không được dùng kết nối Google của phiên đăng nhập thật dù cùng hồ sơ.
+
+## Cấu hình Google OAuth Internal
+
+1. Sao chép `.env.example` thành `.env` nếu chưa có:
+
+   ```powershell
+   Copy-Item .env.example .env
+   ```
+
+2. Trong project Google Cloud thuộc tổ chức TDTU, vào **Google Auth Platform → Audience**, giữ **Internal**. Bật **Google Sheets API** và **Google Drive API**.
+3. Tạo OAuth client loại **Web application**. Khai báo redirect URI chính xác:
+
+   ```text
+   http://localhost:3000/auth/google/callback
+   ```
+
+   Có thể khai báo JavaScript origin `http://localhost:3000`. Hai cách chạy Node/Docker mặc định dùng cùng redirect URI.
+
+4. Điền trực tiếp trên máy vào `.env`:
+
+   ```dotenv
+   GOOGLE_CLIENT_ID=gia-tri-client-id-cua-ban
+   GOOGLE_CLIENT_SECRET=gia-tri-client-secret-cua-ban
+   LECTURER_EMAILS=523h0025@student.tdtu.edu.vn
+   ```
+
+5. Trong **Data Access**, khai báo các scope ứng dụng sử dụng: `openid`, `email`, `profile`, `https://www.googleapis.com/auth/drive.file`, `https://www.googleapis.com/auth/spreadsheets.readonly`.
+6. Khởi động lại Node, hoặc chạy `docker compose up -d` để container nhận môi trường mới. Nếu chính sách Workspace chặn app, quản trị tổ chức cần cho phép OAuth client.
+
+Không gửi Client Secret vào chat hoặc commit `.env`. Docker không chép `.env` vào image; Compose truyền các biến cần thiết khi khởi động. `LECTURER_EMAILS` nhận nhiều email, ngăn bằng dấu phẩy. Miền email và claim `hd` được xác minh theo allowlist `ALLOWED_EMAIL_DOMAINS`, `ALLOWED_HOSTED_DOMAINS`.
+
+### Đăng nhập và kết nối Workspace là hai bước
+
+Lúc đăng nhập chỉ xin thông tin nhận diện cơ bản. Trong trang Nhập dữ liệu, Kê khai hoặc Báo cáo, chọn **Kết nối Google** để cấp quyền bổ sung:
+
+- `spreadsheets.readonly`: đọc bảng tính mà tài khoản có quyền truy cập, bằng URL người dùng nhập.
+- `drive.file`: tạo báo cáo riêng tư và tải minh chứng do người dùng chọn vào Drive.
+
+Sau khi kết nối, nhập URL Google Sheet có cùng cột với mẫu. Ứng dụng đọc tối đa 5.000 dòng, xem trước và kiểm tra trước khi nhập. Có thể tải CSV mẫu trong `samples`, đưa vào Google Sheets để thử tích hợp. Lưu báo cáo lên Google tạo một bảng tính mới trong Drive của người đăng nhập, không tự chia sẻ công khai.
+
+Tải minh chứng nhận PDF/PNG/JPEG/WEBP tối đa 5 MB; nút tải nói rõ việc chia sẻ quyền đọc cho email giảng viên cấu hình. Nếu upload thành công nhưng chia sẻ bị chặn, ứng dụng trả cảnh báo cùng liên kết để kiểm tra. Nhập liên kết minh chứng thủ công vẫn dùng được.
+
+Phiên ứng dụng và token Google chỉ lưu trong RAM, không ghi token ra SQLite hay log. Khởi động lại máy chủ cần đăng nhập/kết nối lại; điểm và kê khai vẫn được lưu bền vững. Không cần API key Google Picker. Google Forms, Gmail, Calendar và điểm danh QR chưa thuộc phạm vi bản demo này.
+
+## Kịch bản demo khoảng 5–10 phút
+
+1. Ở màn đăng nhập, chọn **Không gian sinh viên** với email `523h0080...`: xem 40 điểm chính thức, 10 điểm đang chờ, 50 điểm dự kiến. Kê khai “Ngày hội tình nguyện xanh” đã có sẵn.
+2. Đăng xuất rồi chọn **Không gian giảng viên** với email `523h0025...`. Thử danh sách sinh viên, lọc lớp và xem kê khai. “Đã kiểm tra” vẫn là phần chờ, chưa thành điểm chính thức.
+3. Vào **Nhập dữ liệu**, tải **Tệp kịch bản demo**, chọn tệp vừa tải và kiểm tra. Có thể dùng `samples/du-lieu-chinh-thuc-demo.csv`.
+4. Ghi nhận một khoản mới. Hệ thống tự đối soát khi trùng sinh viên, học kỳ, mã hoạt động, mục điểm và số điểm, đồng thời chỉ có một cặp khớp.
+5. Xem lại sinh viên: 50 điểm chính thức, 0 điểm chờ, 50 điểm dự kiến.
+6. Nhập lại cùng tệp, xác nhận bỏ qua trùng. Kết quả không tăng thêm. Nếu cùng `sourceId` nhưng nội dung khác, toàn bộ đợt nhập bị từ chối.
+7. Mở **Đối soát** để xem các trường hợp cần xác minh thủ công. Tên gần giống chỉ tạo gợi ý; số điểm khác nhau cần xác nhận thủ công.
+8. Mở **Báo cáo**, lọc lớp và chọn cơ sở chính thức/dự kiến, tải Excel/CSV. Khi có Google thật, thử nhập Sheet theo URL, lưu báo cáo lên Sheets và tải minh chứng Drive.
+9. Chọn HK2 để thấy dữ liệu được tách theo kỳ; bảng theo dõi năm học trình bày riêng hai học kỳ.
+
+Luồng 40 → 50 chỉ xảy ra một lần cho mỗi cơ sở dữ liệu mới. Sau khi đã nhập, lịch sử vẫn giữ ở 50; bản demo không tự đặt lại dữ liệu khi khởi động. Để diễn lại từ đầu có thể dùng một `DATA_DIR` mới khi chạy Node, hoặc một project name Compose mới sau khi dừng bản cũ.
+
+## Quy tắc điểm và học kỳ
+
+Quy tắc hiện tại lấy từ PDF TDTU do người dùng cung cấp, hiệu lực năm học 2025–2026. Xem `docs/QUY_TAC_CHAM_DIEM.md` và tải lại mẫu nhập có `criterionId` trong ứng dụng.
+
+Điểm chính thức lấy từ từng khoản được nhập; phần kê khai chờ không cộng vào chính thức. Điểm dự kiến cộng phần chờ chưa khớp/chưa bị từ chối rồi áp trần từng mục và trần tổng. Không tự phạt sinh viên vắng tên trong tệp. Không xem danh sách điểm danh chưa được xác nhận là điểm chính thức.
+
+Quy tắc hiện tại lấy từ PDF TDTU do người dùng cung cấp, hiệu lực năm học 2025–2026. Xem `docs/QUY_TAC_CHAM_DIEM.md` và tải lại mẫu nhập có `criterionId` trong ứng dụng.
+
+## Dữ liệu nhập
+
+Các cột: `sourceId, studentCode, activityId, title, categoryId, points, date, semester`.
+
+- `sourceId`: tham chiếu khoản điểm duy nhất trong một học kỳ, giữ nguyên khi nhập lại. Không tự tạo mã mới cho cùng khoản trong mỗi lần xuất.
+- `studentCode`: MSSV đã có trong danh sách. `activityId` để trống được nếu có `title`.
+- `categoryId`: `c1`, `c2`, `c3`; tên hiển thị có thể cấu hình.
+- `points`: số khác 0, từ -100 đến 100. `date`: ISO `YYYY-MM-DD`. `semester`: một trong hai kỳ đã cấu hình.
+
+Đây là mẫu **từng khoản phát sinh**, không phải mẫu tổng điểm tại một thời điểm. Tệp tổng phải có bước chuyển đổi/đối chiếu phù hợp trước khi nhập để tránh cộng trùng. XLSX/CSV tối đa 8 MB, 5.000 dòng; không nhận công thức trong XLSX. Nhập Excel giữ dữ liệu bằng giá trị, không thực thi công thức.
+
+## Kiểm thử và cấu trúc mã
+
+```powershell
+npm test
+npm run check
+npm run test:e2e
 ```
 
-Mở <http://127.0.0.1:5173/login> (hoặc địa chỉ Vite hiển thị).
+`test:e2e` sử dụng Edge cài trên máy qua Playwright, tự tạo server/cơ sở dữ liệu trong RAM và chụp ảnh vào `artifacts`. Có thể đặt `BROWSER_CHANNEL=chrome` nếu dùng Chrome. Chạy kiểm thử trình duyệt trên máy có trình duyệt tương ứng; container runtime không chứa trình duyệt hay dev dependencies.
 
-## 6. API xác thực
+- `src/server.mjs`: HTTP routes, giới hạn request, file tĩnh và xuất tệp.
+- `src/store.mjs`: SQLite, điểm, kê khai, nhập dữ liệu, đối soát, phân quyền và thống kê.
+- `src/auth.mjs`: Google OAuth, phiên đăng nhập, cấp quyền Workspace theo ngữ cảnh.
+- `src/google.mjs`: Sheets và Drive API.
+- `src/files.mjs`: đọc/ghi XLSX, CSV.
+- `public`: giao diện web không cần build, không phụ thuộc CDN.
+- `tests`: kiểm thử nghiệp vụ, OAuth/API giả lập, HTTP, nhập/xuất tệp.
+- `.vscode`: cấu hình F5 và task. `Dockerfile`/`compose.yaml`: container và volume.
 
-| Method | Endpoint | Mục đích |
-| --- | --- | --- |
-| POST | `/api/v1/auth/login` | Xác minh tài khoản và cấp JWT |
-| GET | `/api/v1/auth/me` | Lấy thông tin người dùng từ JWT hợp lệ |
-| GET | `/api/v1/auth/health` | Kiểm tra endpoint sức khỏe phần auth |
+Các kiểm thử Google sử dụng phản hồi giả lập để kiểm tra luồng và quyền. Việc đăng nhập/gọi API bằng tài khoản thật cần credentials, consent và quyền tổ chức của bạn. Dữ liệu mẫu không đồng bộ với hệ thống điểm chính thức TDTU.
+## Kết quả xác minh bản bàn giao
 
-Khi gọi `/auth/me`, gửi header:
+Đã kiểm tra trên Windows với Node.js 24, trình duyệt Edge headless và Docker Desktop Linux containers:
 
-```http
-Authorization: Bearer <ACCESS_TOKEN>
-```
+- 46/46 kiểm thử tự động: nghiệp vụ, phân quyền, OAuth giả lập, Sheets/Drive giả lập, HTTP và nhập/xuất tệp.
+- Kiểm thử trình duyệt: đăng nhập giảng viên/sinh viên, 9 màn, tạo hoạt động, kê khai, nhập XLSX, đối soát 40 + 10 → 50, nhập trùng, tải báo cáo, đổi học kỳ và giao diện điện thoại.
+- Docker build thành công, healthcheck healthy; kiểm tra API, xuất XLSX và xác nhận dữ liệu còn nguyên sau restart.
 
-Trong Swagger, nếu endpoint đã cấu hình HTTP Bearer, nhấn **Authorize**, nhập JWT vừa nhận từ `/login`, rồi thử `/auth/me`.
-
-## 7. Kiểm thử trước khi commit
-
-1. Đăng nhập đúng → chuyển đến `/dashboard`.
-2. Đăng nhập sai → hiển thị lỗi, không vào trang chủ.
-3. Reload trong vòng 10 phút → vẫn giữ đăng nhập.
-4. Đợi hơn 10 phút từ lúc cấp JWT, gọi lại `/auth/me` bằng **token cũ** → nhận `401 Unauthorized`.
-5. Reload trang sau khi hết hạn → quay về `/login`.
-6. Đăng xuất rồi truy cập trực tiếp `/dashboard` → quay về `/login`.
-7. Kiểm tra menu, học kỳ, tab và bảng dữ liệu minh họa trên trang chủ.
-
-## 8. Làm việc nhóm và Git
-
-- `main`: nhánh ổn định; `dev`: tích hợp và thử nghiệm chức năng mới.
-- Chỉ commit mã nguồn, `database/schema.sql`, `requirements.txt`, `package.json`, `package-lock.json`, `.env.example` và tài liệu.
-- **Không commit** `.env`, `.venv/`, `node_modules/`, `__pycache__/`, mật khẩu hoặc JWT secret thật.
-- Mỗi thành viên tạo `.env` từ `.env.example` và cấu hình MySQL trên máy mình.
-- Trước khi push: chạy `git status --short` và kiểm tra danh sách file đã stage.
-
-## 9. Hướng phát triển tiếp theo
-
-- Thiết kế bảng học kỳ, tiêu chí rèn luyện, hoạt động và bản ghi điểm.
-- Kết nối trang chủ với dữ liệu MySQL qua API FastAPI.
-- Phân quyền sinh viên, đơn vị tổ chức và người duyệt điểm.
-- Xây dựng đăng ký hoạt động, điểm danh, xét duyệt điểm, lịch sử thay đổi và khiếu nại.
-- Bổ sung kiểm thử tự động, giới hạn đăng nhập, quản lý tài khoản và bảo mật triển khai trước khi đưa lên môi trường thật.
+Quy tắc hiện tại lấy từ PDF TDTU do người dùng cung cấp, hiệu lực năm học 2025–2026. Xem `docs/QUY_TAC_CHAM_DIEM.md` và tải lại mẫu nhập có `criterionId` trong ứng dụng.

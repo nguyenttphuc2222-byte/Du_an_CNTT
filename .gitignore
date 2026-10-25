@@ -1,17 +1,11 @@
-# Python
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-.env
-.pytest_cache/
-
-# Node
 node_modules/
-dist/
+data/
+.env
+.env.*
+!.env.example
+*.log
+coverage/
+playwright-report/
+test-results/
 
-# IDE / OS
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
+artifacts/

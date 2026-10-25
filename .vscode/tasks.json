@@ -1,0 +1,39 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Cài thư viện",
+      "type": "shell",
+      "command": "npm install",
+      "windows": { "command": "npm.cmd install" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Chạy demo",
+      "type": "shell",
+      "command": "npm start",
+      "windows": { "command": "npm.cmd start" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Kiểm thử",
+      "type": "shell",
+      "command": "npm test",
+      "windows": { "command": "npm.cmd test" },
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Docker: khởi động demo",
+      "type": "shell",
+      "command": "docker compose up -d --build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Docker: dừng demo",
+      "type": "shell",
+      "command": "docker compose down",
+      "problemMatcher": []
+    }
+  ]
+}
