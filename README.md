@@ -90,14 +90,6 @@ Tải minh chứng nhận PDF/PNG/JPEG/WEBP tối đa 5 MB; nút tải nói rõ 
 
 Phiên ứng dụng và token Google chỉ lưu trong RAM, không ghi token ra SQLite hay log. Khởi động lại máy chủ cần đăng nhập/kết nối lại; điểm và kê khai vẫn được lưu bền vững. Không cần API key Google Picker. Google Forms, Gmail, Calendar và điểm danh QR chưa thuộc phạm vi bản demo này.
 
-## Quy tắc điểm và học kỳ
-
-Quy tắc hiện tại lấy từ PDF TDTU do người dùng cung cấp, hiệu lực năm học 2025–2026. Xem `docs/QUY_TAC_CHAM_DIEM.md` và tải lại mẫu nhập có `criterionId` trong ứng dụng.
-
-Điểm chính thức lấy từ từng khoản được nhập; phần kê khai chờ không cộng vào chính thức. Điểm dự kiến cộng phần chờ chưa khớp/chưa bị từ chối rồi áp trần từng mục và trần tổng. Không tự phạt sinh viên vắng tên trong tệp. Không xem danh sách điểm danh chưa được xác nhận là điểm chính thức.
-
-Quy tắc hiện tại lấy từ PDF TDTU do người dùng cung cấp, hiệu lực năm học 2025–2026. Xem `docs/QUY_TAC_CHAM_DIEM.md` và tải lại mẫu nhập có `criterionId` trong ứng dụng.
-
 ## Dữ liệu nhập
 
 Các cột: `sourceId, studentCode, activityId, title, categoryId, points, date, semester`.
