@@ -11,12 +11,13 @@ services:
       PORT: 3000
       BASE_URL: http://localhost:3000
       DATA_DIR: /app/data
-      DEMO_ENABLED: ${DEMO_ENABLED:-true}
+      DEMO_ENABLED: ${DEMO_ENABLED:-false}
+      GOOGLE_AUTH_AUDIENCE: ${GOOGLE_AUTH_AUDIENCE:-internal}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       ALLOWED_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS:-student.tdtu.edu.vn,tdtu.edu.vn}
       ALLOWED_HOSTED_DOMAINS: ${ALLOWED_HOSTED_DOMAINS:-student.tdtu.edu.vn,tdtu.edu.vn}
-      LECTURER_EMAILS: ${LECTURER_EMAILS:-523h0025@student.tdtu.edu.vn}
+      LECTURER_EMAILS: ${LECTURER_EMAILS-523h0025@student.tdtu.edu.vn}
     volumes:
       - conduct-data:/app/data
     init: true

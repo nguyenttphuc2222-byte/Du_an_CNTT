@@ -2377,3 +2377,131 @@ input[readonly] {
     max-height: 500px;
   }
 }
+
+.regulation-document {
+  width: 100%;
+  min-width: 0;
+}
+.regulation-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--muted);
+}
+.regulation-zoom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.regulation-zoom output {
+  min-width: 39px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.regulation-zoom .btn[aria-label] {
+  width: 30px;
+  padding: 3px;
+  font-size: 17px;
+  line-height: 1;
+}
+.regulation-zoom .btn:disabled {
+  cursor: default;
+}
+.regulation-pages {
+  width: 100%;
+  min-width: 0;
+  max-height: calc(100dvh - 285px);
+  min-height: 470px;
+  overflow: auto;
+  padding: 22px;
+  background: #e9eeeb;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.regulation-page-list {
+  width: 100%;
+  min-width: 100%;
+  max-width: none;
+  margin: 0 auto;
+}
+.regulation-page {
+  margin: 0 0 22px;
+  width: 100%;
+}
+.regulation-page:last-child {
+  margin-bottom: 0;
+}
+.regulation-page img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: none;
+  background: #fff;
+  border: 1px solid #d8dfda;
+  box-shadow: 0 3px 15px #1d3d3212;
+}
+.regulation-page figcaption {
+  text-align: center;
+  padding: 11px 0 0;
+  font-size: 10px;
+  color: #708379;
+  font-variant-numeric: tabular-nums;
+}
+.regulation-fallback {
+  padding: 15px 20px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.regulation-fallback a {
+  font-weight: 600;
+}
+@media (max-width: 760px) {
+  .regulation-pages {
+    max-height: calc(100dvh - 305px);
+    min-height: 440px;
+    padding: 12px;
+  }
+  .regulation-toolbar {
+    padding: 11px 13px;
+    gap: 8px;
+    font-size: 10px;
+  }
+  .regulation-zoom {
+    gap: 6px;
+  }
+  .regulation-zoom .btn {
+    font-size: 10px;
+  }
+  .regulation-zoom output {
+    font-size: 10px;
+    min-width: 34px;
+  }
+  .regulation-page {
+    margin-bottom: 16px;
+  }
+  .regulation-fallback {
+    padding: 13px 15px;
+    font-size: 10px;
+  }
+  .page-head:has(+ .regulation-document) {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .page-head:has(+ .regulation-document) > div {
+    width: 100%;
+    min-width: 0;
+  }
+  .page-head:has(+ .regulation-document) .page-actions {
+    width: 100%;
+  }
+}

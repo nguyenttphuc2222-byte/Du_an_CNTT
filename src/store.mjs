@@ -1087,10 +1087,16 @@ export function openStore({ dbPath = ':memory:' } = {}) {
         publicUser(one('SELECT * FROM users WHERE id=?', id)),
       );
     },
-    ensureGoogleUser({ sub, email, name, role = 'STUDENT' }) {
+    ensureGoogleUser({ sub, email, name, role = 'STUDENT', authAudience = 'internal' }) {
       const subject = required(sub, 'Google sub', 200);
       const address = required(email, 'email', 300).toLowerCase();
-      if (!/^[^@\s]+@(student\.tdtu\.edu\.vn|tdtu\.edu\.vn)$/.test(address))
+      const audience = String(authAudience).trim().toLowerCase();
+      if (!['internal', 'external'].includes(audience)) fail('Chế độ đăng nhập không hợp lệ.');
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(address)) fail('Email Google không hợp lệ.');
+      if (
+        audience === 'internal' &&
+        !/^[^@\s]+@(student\.tdtu\.edu\.vn|tdtu\.edu\.vn)$/.test(address)
+      )
         fail('Chỉ chấp nhận tài khoản Google của TDTU.', 403);
       if (!['STUDENT', 'LECTURER'].includes(role)) fail('Vai trò không hợp lệ.');
       return transaction(() => {
@@ -1101,20 +1107,10 @@ export function openStore({ dbPath = ':memory:' } = {}) {
         if (byEmail?.googleSub && byEmail.googleSub !== subject)
           fail('Email đã liên kết một định danh Google khác.', 403);
         const existing = bySub || byEmail;
-        if (existing) {
-          const displayName = str(name) || existing.name;
-          run(
-            'UPDATE users SET name=?,role=?,googleSub=?,provider=? WHERE id=?',
-            displayName,
-            role,
-            subject,
-            'google',
-            existing.id,
-          );
-          syncStudentName(existing.studentId, displayName);
-          return publicUser(one('SELECT * FROM users WHERE id=?', existing.id));
-        }
-        let student = one('SELECT * FROM students WHERE email=?', address);
+        // Keep the same score profile across role changes; a former lecturer may not have one yet.
+        let student = existing?.studentId
+          ? studentRow(existing.studentId)
+          : one('SELECT * FROM students WHERE email=?', address);
         if (!student && role === 'STUDENT') {
           const id = makeId('student');
           let code = address.split('@')[0].toUpperCase().slice(0, 60);
@@ -1128,6 +1124,20 @@ export function openStore({ dbPath = ':memory:' } = {}) {
             address,
           );
           student = studentRow(id);
+        }
+        if (existing) {
+          const displayName = str(name) || existing.name;
+          run(
+            'UPDATE users SET name=?,role=?,studentId=?,googleSub=?,provider=? WHERE id=?',
+            displayName,
+            role,
+            existing.studentId || student?.id || null,
+            subject,
+            'google',
+            existing.id,
+          );
+          syncStudentName(existing.studentId || student?.id, displayName);
+          return publicUser(one('SELECT * FROM users WHERE id=?', existing.id));
         }
         const id = makeId('user');
         const displayName = str(name) || student?.name || address.split('@')[0];

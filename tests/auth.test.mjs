@@ -44,6 +44,7 @@ function fixture(overrides = {}) {
   const config = {
     baseUrl: 'http://localhost:3000',
     demoEnabled: true,
+    authAudience: 'internal',
     lecturerEmails: [],
     ...overrides,
   };
@@ -230,6 +231,213 @@ test('allowed Google student is a student unless explicitly granted lecturer', a
   auth.close();
 });
 
+for (const scenario of [
+  {
+    name: 'Internal student',
+    mode: 'internal',
+    email: 'person@student.tdtu.edu.vn',
+    role: 'STUDENT',
+  },
+  {
+    name: 'Internal faculty',
+    mode: 'internal',
+    email: 'person@tdtu.edu.vn',
+    role: 'LECTURER',
+  },
+  {
+    name: 'Internal student lecturer override normalizes email and whitespace',
+    mode: ' INTERNAL ',
+    email: '  523H0025@STUDENT.TDTU.EDU.VN  ',
+    hd: ' TDTU.EDU.VN ',
+    whitelist: [' \t523h0025@Student.TDTU.edu.vn \n'],
+    role: 'LECTURER',
+  },
+  {
+    name: 'Internal rejects whitelisted personal Gmail',
+    mode: 'internal',
+    email: 'teacher@gmail.com',
+    whitelist: ['teacher@gmail.com'],
+    status: 403,
+  },
+  {
+    name: 'Internal rejects whitelisted domain suffix spoof',
+    mode: 'internal',
+    email: 'teacher@tdtu.edu.vn.attacker.invalid',
+    whitelist: ['teacher@tdtu.edu.vn.attacker.invalid'],
+    status: 403,
+  },
+  {
+    name: 'Internal rejects whitelisted account without Workspace claim',
+    mode: 'internal',
+    email: 'teacher@student.tdtu.edu.vn',
+    hd: undefined,
+    whitelist: ['teacher@student.tdtu.edu.vn'],
+    status: 403,
+  },
+  {
+    name: 'Internal configured domains cannot expand beyond TDTU',
+    mode: 'internal',
+    email: 'teacher@other.edu.vn',
+    hd: 'other.edu.vn',
+    config: { allowedDomains: ['other.edu.vn'], allowedHostedDomains: ['other.edu.vn'] },
+    status: 403,
+  },
+  {
+    name: 'External personal Gmail without Workspace claim',
+    mode: 'external',
+    email: 'person@gmail.com',
+    hd: undefined,
+    role: 'STUDENT',
+  },
+  {
+    name: 'External account from another Workspace',
+    mode: 'external',
+    email: 'person@other.edu.vn',
+    hd: 'other.edu.vn',
+    role: 'STUDENT',
+  },
+  {
+    name: 'External faculty defaults to student',
+    mode: 'external',
+    email: 'person@tdtu.edu.vn',
+    role: 'STUDENT',
+  },
+  {
+    name: 'External TDTU student',
+    mode: 'external',
+    email: 'person@student.tdtu.edu.vn',
+    role: 'STUDENT',
+  },
+  {
+    name: 'External whitelisted Gmail normalizes email and whitespace',
+    mode: ' EXTERNAL ',
+    email: '  Teacher@GMAIL.COM  ',
+    hd: undefined,
+    whitelist: [' teacher@gmail.com '],
+    role: 'LECTURER',
+  },
+  {
+    name: 'External whitelisted TDTU student',
+    mode: 'external',
+    email: '523h0025@student.tdtu.edu.vn',
+    whitelist: ['523h0025@student.tdtu.edu.vn'],
+    role: 'LECTURER',
+  },
+  {
+    name: 'External whitelisted faculty',
+    mode: 'external',
+    email: 'teacher@tdtu.edu.vn',
+    whitelist: ['teacher@tdtu.edu.vn'],
+    role: 'LECTURER',
+  },
+  {
+    name: 'External suffix spoof gets no lecturer privileges',
+    mode: 'external',
+    email: 'teacher@tdtu.edu.vn.attacker.invalid',
+    whitelist: ['teacher@tdtu.edu.vn'],
+    role: 'STUDENT',
+  },
+]) {
+  test(`Google role policy: ${scenario.name}`, async (t) => {
+    const { auth } = fixture({
+      ...googleConfig,
+      authAudience: scenario.mode,
+      lecturerEmails: scenario.whitelist || [],
+      ...scenario.config,
+    });
+    t.after(() => auth.close());
+    const flow = googleFlow(auth);
+    assert.equal(auth.sessionData(request()).auth.authAudience, scenario.mode.trim().toLowerCase());
+    assert.equal(
+      flow.location.searchParams.get('hd'),
+      scenario.mode.trim().toLowerCase() === 'internal' ? '*' : null,
+    );
+    mockGoogle(t, flow, {
+      email: scenario.email,
+      hd: Object.hasOwn(scenario, 'hd') ? scenario.hd : 'tdtu.edu.vn',
+    });
+    const res = response();
+    if (scenario.status) {
+      await assert.rejects(() => auth.finishGoogle(request(flow.cookie), res, flow.callback), {
+        status: scenario.status,
+      });
+      assert.equal(auth.getUser(request()), null);
+    } else {
+      await auth.finishGoogle(request(flow.cookie), res, flow.callback);
+      const user = auth.getUser(request(cookieFrom(res, 'tdtu_conduct_session')));
+      assert.equal(user.role, scenario.role);
+      assert.equal(user.email, scenario.email.trim().toLowerCase());
+    }
+  });
+}
+
+for (const authAudience of ['internal', 'external']) {
+  for (const [name, payload] of [
+    ['unverified email', { email_verified: false }],
+    ['non-boolean verification', { email_verified: 'true' }],
+    ['wrong issuer', { iss: 'https://attacker.invalid' }],
+    ['wrong audience', { aud: 'other-client' }],
+    ['missing Google sub', { sub: undefined }],
+    ['empty Google sub', { sub: '' }],
+    ['wrong nonce', { nonce: 'wrong-nonce' }],
+    ['expired token', { exp: 1 }],
+    ['malformed email', { email: 'invalid@@gmail.com' }],
+    ['email with embedded whitespace', { email: 'invalid name@gmail.com' }],
+  ]) {
+    test(`${authAudience} rejects ${name}`, async (t) => {
+      const { auth } = fixture({ ...googleConfig, authAudience });
+      t.after(() => auth.close());
+      const flow = googleFlow(auth);
+      mockGoogle(t, flow, payload);
+      await assert.rejects(
+        () => auth.finishGoogle(request(flow.cookie), response(), flow.callback),
+        {
+          status: 400,
+        },
+      );
+    });
+  }
+}
+
+test('invalid auth audience fails closed', () => {
+  assert.throws(
+    () => fixture({ ...googleConfig, authAudience: 'everyone' }),
+    /GOOGLE_AUTH_AUDIENCE/,
+  );
+});
+
+test('each Google login reconciles the stored role when mode or whitelist changes', async (t) => {
+  const base = fixture(googleConfig);
+  base.auth.close();
+  const active = {};
+  mockGoogle(t, active, { email: 'person@tdtu.edu.vn' });
+  let previousAuth, previousCookie;
+  for (const [authAudience, lecturerEmails, role] of [
+    ['internal', [], 'LECTURER'],
+    ['external', [], 'STUDENT'],
+    ['external', [' PERSON@TDTU.EDU.VN '], 'LECTURER'],
+    ['external', [], 'STUDENT'],
+    ['internal', [], 'LECTURER'],
+  ]) {
+    previousAuth?.close();
+    const auth = createAuth({
+      store: base.store,
+      config: { ...base.config, authAudience, lecturerEmails },
+    });
+    t.after(() => auth.close());
+    if (previousCookie) assert.equal(auth.getUser(request(previousCookie)), null);
+    Object.assign(active, googleFlow(auth));
+    const res = response();
+    await auth.finishGoogle(request(active.cookie), res, active.callback);
+    previousCookie = cookieFrom(res, 'tdtu_conduct_session');
+    const user = auth.getUser(request(previousCookie));
+    assert.equal(user.id, 'google-12345');
+    assert.equal(user.role, role);
+    assert.equal(base.store.getUser(user.id).role, role);
+    previousAuth = auth;
+  }
+});
+
 function workspaceFlow(auth, req) {
   const res = response();
   auth.startWorkspace(req, res);
@@ -244,130 +452,137 @@ function workspaceFlow(auth, req) {
 const workspaceScopes =
   'openid email profile https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets.readonly';
 
-test('real Google grant stays unavailable to demo sessions sharing the same database profile', async (t) => {
-  const { auth, store, users } = fixture(googleConfig);
-  store.ensureGoogleUser = (user) => {
-    const result = { ...user, id: 'demo-student', provider: 'google', studentId: 's001' };
-    users.set(result.id, result);
-    return result;
-  };
-  let active = googleFlow(auth);
-  t.mock.method(OAuth2Client.prototype, 'getToken', async () => ({
-    tokens: {
-      id_token: 'signed-token',
-      access_token: 'server-only-access',
-      refresh_token: 'server-only-refresh',
-      expiry_date: Date.now() + 3600000,
-      scope: workspaceScopes,
-    },
-  }));
-  t.mock.method(OAuth2Client.prototype, 'verifyIdToken', async () => ({
-    getPayload: () => ({
-      iss: 'https://accounts.google.com',
-      aud: 'test-client-id',
-      sub: 'same-real-account',
-      exp: Math.floor(Date.now() / 1000) + 3600,
-      email_verified: true,
-      email: 'teacher-demo@student.tdtu.edu.vn',
-      hd: 'tdtu.edu.vn',
-      nonce: active.location.searchParams.get('nonce'),
-    }),
-  }));
-  const loginRes = response();
-  await auth.finishGoogle(request(active.cookie), loginRes, active.callback);
-  const googleCookie = cookieFrom(loginRes, 'tdtu_conduct_session');
-  assert.equal(auth.getUser(request(googleCookie)).provider, 'google');
-  assert.equal(auth.workspaceStatus(request(googleCookie)).connected, false);
-  active = workspaceFlow(auth, request(googleCookie));
-  assert.equal(active.location.searchParams.get('access_type'), 'offline');
-  assert.equal(active.location.searchParams.get('include_granted_scopes'), 'true');
-  assert.match(active.location.searchParams.get('scope'), /spreadsheets\.readonly/);
-  const connectRes = response();
-  await auth.finishGoogle(
-    request(`${googleCookie}; ${active.cookie}`),
-    connectRes,
-    active.callback,
-  );
-  assert.equal(connectRes.getHeader('Location'), '/?googleConnected=1');
-  assert.equal(auth.workspaceStatus(request(googleCookie)).connected, true);
-  assert.doesNotMatch(JSON.stringify(auth.workspaceStatus(request(googleCookie))), /server-only/);
-  const api = t.mock.method(OAuth2Client.prototype, 'request', async (options) => ({
-    data: { received: options.url },
-  }));
-  const validUrl = 'https://sheets.googleapis.com/v4/spreadsheets/abcdefghijk';
-  assert.equal((await auth.googleRequest(request(googleCookie), validUrl)).received, validUrl);
-  for (const url of [
-    'https://attacker.invalid/v4/spreadsheets/abcdefghijk',
-    'https://sheets.googleapis.com.attacker.invalid/v4/spreadsheets',
-    'http://sheets.googleapis.com/v4/spreadsheets',
-    'https://www.googleapis.com/drive/v3/about',
-    'https://sheets.googleapis.com/v4/spreadsheets/../other',
-  ]) {
-    await assert.rejects(() => auth.googleRequest(request(googleCookie), url), { status: 400 });
-  }
-  assert.equal(api.mock.callCount(), 1);
-  const uploadBody = Buffer.from('multipart evidence');
-  await auth.googleRequest(
-    request(googleCookie),
-    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
-    {
-      method: 'POST',
-      body: uploadBody,
-      headers: {
-        'Content-Type': 'multipart/related; boundary=test',
-        Authorization: 'must-not-forward',
+for (const authAudience of ['internal', 'external']) {
+  test(`${authAudience}: real Google grant stays unavailable to demo sessions sharing the same database profile`, async (t) => {
+    const { auth, store, users } = fixture({ ...googleConfig, authAudience });
+    store.ensureGoogleUser = (user) => {
+      const result = { ...user, id: 'demo-student', provider: 'google', studentId: 's001' };
+      users.set(result.id, result);
+      return result;
+    };
+    let active = googleFlow(auth);
+    t.mock.method(OAuth2Client.prototype, 'getToken', async () => ({
+      tokens: {
+        id_token: 'signed-token',
+        access_token: 'server-only-access',
+        refresh_token: 'server-only-refresh',
+        expiry_date: Date.now() + 3600000,
+        scope: workspaceScopes,
       },
-    },
-  );
-  const requestOptions = api.mock.calls[1].arguments[0];
-  assert.equal(requestOptions.data, uploadBody);
-  assert.deepEqual(requestOptions.headers, { 'Content-Type': 'multipart/related; boundary=test' });
-  assert.equal(requestOptions.maxRedirects, 0);
-  const demoRes = response();
-  const snapshot = auth.demoLogin(request(), demoRes, { userId: 'demo-student' });
-  const demoCookie = cookieFrom(demoRes, 'tdtu_conduct_session');
-  assert.equal(snapshot.user.provider, 'demo');
-  assert.equal(auth.getUser(request(demoCookie)).provider, 'demo');
-  assert.equal(auth.workspaceStatus(request(demoCookie)).connected, false);
-  assert.throws(() => auth.startWorkspace(request(demoCookie), response()), { status: 403 });
-  await assert.rejects(() => auth.googleRequest(request(demoCookie), validUrl), { status: 403 });
-  assert.equal(auth.workspaceStatus(request(googleCookie)).connected, true);
-  auth.close();
-});
+    }));
+    t.mock.method(OAuth2Client.prototype, 'verifyIdToken', async () => ({
+      getPayload: () => ({
+        iss: 'https://accounts.google.com',
+        aud: 'test-client-id',
+        sub: 'same-real-account',
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        email_verified: true,
+        email:
+          authAudience === 'external' ? 'person@gmail.com' : 'teacher-demo@student.tdtu.edu.vn',
+        hd: authAudience === 'external' ? undefined : 'tdtu.edu.vn',
+        nonce: active.location.searchParams.get('nonce'),
+      }),
+    }));
+    const loginRes = response();
+    await auth.finishGoogle(request(active.cookie), loginRes, active.callback);
+    const googleCookie = cookieFrom(loginRes, 'tdtu_conduct_session');
+    assert.equal(auth.getUser(request(googleCookie)).provider, 'google');
+    assert.equal(auth.workspaceStatus(request(googleCookie)).connected, false);
+    active = workspaceFlow(auth, request(googleCookie));
+    assert.equal(active.location.searchParams.get('hd'), authAudience === 'internal' ? '*' : null);
+    assert.equal(active.location.searchParams.get('access_type'), 'offline');
+    assert.equal(active.location.searchParams.get('include_granted_scopes'), 'true');
+    assert.match(active.location.searchParams.get('scope'), /spreadsheets\.readonly/);
+    const connectRes = response();
+    await auth.finishGoogle(
+      request(`${googleCookie}; ${active.cookie}`),
+      connectRes,
+      active.callback,
+    );
+    assert.equal(connectRes.getHeader('Location'), '/?googleConnected=1');
+    assert.equal(auth.workspaceStatus(request(googleCookie)).connected, true);
+    assert.doesNotMatch(JSON.stringify(auth.workspaceStatus(request(googleCookie))), /server-only/);
+    const api = t.mock.method(OAuth2Client.prototype, 'request', async (options) => ({
+      data: { received: options.url },
+    }));
+    const validUrl = 'https://sheets.googleapis.com/v4/spreadsheets/abcdefghijk';
+    assert.equal((await auth.googleRequest(request(googleCookie), validUrl)).received, validUrl);
+    for (const url of [
+      'https://attacker.invalid/v4/spreadsheets/abcdefghijk',
+      'https://sheets.googleapis.com.attacker.invalid/v4/spreadsheets',
+      'http://sheets.googleapis.com/v4/spreadsheets',
+      'https://www.googleapis.com/drive/v3/about',
+      'https://sheets.googleapis.com/v4/spreadsheets/../other',
+    ]) {
+      await assert.rejects(() => auth.googleRequest(request(googleCookie), url), { status: 400 });
+    }
+    assert.equal(api.mock.callCount(), 1);
+    const uploadBody = Buffer.from('multipart evidence');
+    await auth.googleRequest(
+      request(googleCookie),
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+      {
+        method: 'POST',
+        body: uploadBody,
+        headers: {
+          'Content-Type': 'multipart/related; boundary=test',
+          Authorization: 'must-not-forward',
+        },
+      },
+    );
+    const requestOptions = api.mock.calls[1].arguments[0];
+    assert.equal(requestOptions.data, uploadBody);
+    assert.deepEqual(requestOptions.headers, {
+      'Content-Type': 'multipart/related; boundary=test',
+    });
+    assert.equal(requestOptions.maxRedirects, 0);
+    const demoRes = response();
+    const snapshot = auth.demoLogin(request(), demoRes, { userId: 'demo-student' });
+    const demoCookie = cookieFrom(demoRes, 'tdtu_conduct_session');
+    assert.equal(snapshot.user.provider, 'demo');
+    assert.equal(auth.getUser(request(demoCookie)).provider, 'demo');
+    assert.equal(auth.workspaceStatus(request(demoCookie)).connected, false);
+    assert.throws(() => auth.startWorkspace(request(demoCookie), response()), { status: 403 });
+    await assert.rejects(() => auth.googleRequest(request(demoCookie), validUrl), { status: 403 });
+    assert.equal(auth.workspaceStatus(request(googleCookie)).connected, true);
+    auth.close();
+  });
 
-test('Workspace consent rejects a different Google account and never stores its grant', async (t) => {
-  const { auth } = fixture(googleConfig);
-  let active = googleFlow(auth),
-    sub = 'original-account';
-  t.mock.method(OAuth2Client.prototype, 'getToken', async () => ({
-    tokens: {
-      id_token: 'signed-token',
-      access_token: 'access',
-      scope: workspaceScopes,
-      expiry_date: Date.now() + 3600000,
-    },
-  }));
-  t.mock.method(OAuth2Client.prototype, 'verifyIdToken', async () => ({
-    getPayload: () => ({
-      iss: 'https://accounts.google.com',
-      aud: 'test-client-id',
-      sub,
-      exp: Math.floor(Date.now() / 1000) + 3600,
-      email_verified: true,
-      email: 'teacher-demo@student.tdtu.edu.vn',
-      hd: 'tdtu.edu.vn',
-      nonce: active.location.searchParams.get('nonce'),
-    }),
-  }));
-  const res = response();
-  await auth.finishGoogle(request(active.cookie), res, active.callback);
-  const cookie = cookieFrom(res, 'tdtu_conduct_session');
-  active = workspaceFlow(auth, request(cookie));
-  sub = 'different-google-account';
-  await assert.rejects(
-    () => auth.finishGoogle(request(`${cookie}; ${active.cookie}`), response(), active.callback),
-    { status: 403 },
-  );
-  assert.equal(auth.workspaceStatus(request(cookie)).connected, false);
-  auth.close();
-});
+  test(`${authAudience}: Workspace consent rejects a different Google account and never stores its grant`, async (t) => {
+    const { auth } = fixture({ ...googleConfig, authAudience });
+    let active = googleFlow(auth),
+      sub = 'original-account';
+    t.mock.method(OAuth2Client.prototype, 'getToken', async () => ({
+      tokens: {
+        id_token: 'signed-token',
+        access_token: 'access',
+        scope: workspaceScopes,
+        expiry_date: Date.now() + 3600000,
+      },
+    }));
+    t.mock.method(OAuth2Client.prototype, 'verifyIdToken', async () => ({
+      getPayload: () => ({
+        iss: 'https://accounts.google.com',
+        aud: 'test-client-id',
+        sub,
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        email_verified: true,
+        email:
+          authAudience === 'external' ? 'person@gmail.com' : 'teacher-demo@student.tdtu.edu.vn',
+        hd: authAudience === 'external' ? undefined : 'tdtu.edu.vn',
+        nonce: active.location.searchParams.get('nonce'),
+      }),
+    }));
+    const res = response();
+    await auth.finishGoogle(request(active.cookie), res, active.callback);
+    const cookie = cookieFrom(res, 'tdtu_conduct_session');
+    active = workspaceFlow(auth, request(cookie));
+    sub = 'different-google-account';
+    await assert.rejects(
+      () => auth.finishGoogle(request(`${cookie}; ${active.cookie}`), response(), active.callback),
+      { status: 403 },
+    );
+    assert.equal(auth.workspaceStatus(request(cookie)).connected, false);
+    auth.close();
+  });
+}

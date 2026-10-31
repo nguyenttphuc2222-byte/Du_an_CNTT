@@ -34,7 +34,8 @@ export async function createApp(options = {}) {
     googleClientId: process.env.GOOGLE_CLIENT_ID || '',
     googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
     sessionSecret: process.env.SESSION_SECRET || '',
-    demoEnabled: process.env.DEMO_ENABLED !== 'false',
+    demoEnabled: process.env.DEMO_ENABLED === 'true',
+    authAudience: process.env.GOOGLE_AUTH_AUDIENCE ?? 'internal',
     lecturerEmails: list(process.env.LECTURER_EMAILS, '523h0025@student.tdtu.edu.vn'),
     allowedDomains: list(process.env.ALLOWED_EMAIL_DOMAINS, 'student.tdtu.edu.vn,tdtu.edu.vn'),
     allowedHostedDomains: list(
@@ -43,6 +44,9 @@ export async function createApp(options = {}) {
     ),
     ...options.config,
   };
+  config.authAudience = String(config.authAudience).trim().toLowerCase();
+  if (!['internal', 'external'].includes(config.authAudience))
+    throw error(500, 'GOOGLE_AUTH_AUDIENCE phải là internal hoặc external.');
   if (!config.demoEnabled && (!config.googleClientId || !config.googleClientSecret))
     throw error(500, 'Đã tắt tài khoản demo nhưng chưa cấu hình Google OAuth.');
   const dbPath =
@@ -115,7 +119,7 @@ export async function createApp(options = {}) {
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader(
       'Content-Security-Policy',
-      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
     );
     let url;
     try {
@@ -141,7 +145,7 @@ export async function createApp(options = {}) {
       if (method === 'GET' && pathname === '/api/health')
         return json(res, 200, {
           ok: true,
-          version: '0.2.0',
+          version: '0.3.0',
           storage: 'SQLite',
           ruleVersion: RULE_VERSION,
           scoringSource: RULE_SOURCE.url,
@@ -198,7 +202,17 @@ export async function createApp(options = {}) {
         current(req);
         return json(res, 201, await google.uploadEvidence(req, await body(req)));
       }
+      if (method === 'GET' && /^\/regulations\/page-(0[1-9]|10)\.png$/.test(pathname)) {
+        const content = await readFile(
+          path.join(ROOT, 'public', 'regulations', path.basename(pathname)),
+        );
+        res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-cache' });
+        res.end(content);
+        return;
+      }
       if (method === 'GET' && pathname === '/docs/quy-che-ren-luyen-tdtu.pdf') {
+        res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+        res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'self'");
         const content = await readFile(path.join(ROOT, 'docs', 'quy-che-ren-luyen-tdtu.pdf'));
         res.writeHead(200, {
           'Content-Type': 'application/pdf',

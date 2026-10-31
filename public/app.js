@@ -39,6 +39,7 @@ const routes = [
   ['students', 'Sinh viên', 'users', true],
   ['activities', 'Hoạt động', 'calendar'],
   ['claims', 'Tự kê khai', 'file'],
+  ['regulations', 'Quy chế Điểm rèn luyện', 'book'],
   ['import', 'Nhập dữ liệu', 'upload', true],
   ['reconciliation', 'Đối soát', 'link', true],
   ['reports', 'Báo cáo', 'chart', true],
@@ -303,8 +304,9 @@ function evidenceFields() {
 
 function renderLogin() {
   const s = state.session || { auth: {}, demoUsers: [] };
+  const googleName = s.auth?.authAudience === 'external' ? 'Google' : 'Google TDTU';
   $('#app').innerHTML =
-    `<main class="login-page"><section class="login-story"><a class="brand" href="/"><span class="brand-mark">${icon('check')}</span><span class="brand-name">conduct<span class="brand-sub">STUDENT DEVELOPMENT</span></span></a><div class="login-copy"><div class="eyebrow">Đồng hành cùng sinh viên TDTU</div><h1>Mỗi nỗ lực.<br>Một dấu ấn<br>được ghi nhận.</h1><p>Không gian kết nối hoạt động, minh chứng và điểm rèn luyện. Theo dõi rõ ràng, đối soát chính xác, chủ động hành trình của bạn.</p><div class="login-benefits"><div>${icon('shield')}Một tài khoản trường, một không gian chung</div><div>${icon('chart')}Điểm chính thức và dự kiến minh bạch</div><div>${icon('link')}Mỗi hoạt động chỉ được tính một lần</div></div></div><footer>Đồ án ứng dụng quản lý điểm rèn luyện · 2026</footer></section><section class="login-form-area"><div class="login-form"><div class="eyebrow">Chào mừng trở lại</div><h2>Bắt đầu cùng Conduct</h2><p>Đăng nhập để xem điểm và quản lý hoạt động của bạn.</p>${s.auth?.googleConfigured ? '<a href="/auth/google" class="google-btn"><span class="google-g">G</span>Tiếp tục với tài khoản Google TDTU</a>' : '<button class="google-btn" data-action="google-help"><span class="google-g">G</span>Đăng nhập Google TDTU</button><p class="google-unavailable">Cấu hình Google OAuth trong .env để bật đăng nhập thật.</p>'}${s.auth?.demoEnabled ? `<div class="login-divider">HOẶC KHÁM PHÁ BẢN DEMO</div>${(s.demoUsers || []).map((u) => `<button class="demo-account" data-action="demo-login" data-id="${e(u.id)}"><span class="avatar ${u.role === 'LECTURER' ? 'lecturer' : ''}">${icon(u.role === 'LECTURER' ? 'book' : 'users')}</span><span><strong>${u.role === 'LECTURER' ? 'Không gian giảng viên' : 'Không gian sinh viên'}${u.id === 'demo-student-2' ? ' · tài khoản 2' : ''}</strong><small>${e(u.email)}</small></span>${icon('arrow')}</button>`).join('')}` : ''}<p class="login-disclaimer">Dữ liệu sinh viên minh họa. Cách tính điểm theo bản PDF quy chế do bạn cung cấp, có hiệu lực từ năm học 2025–2026.</p><div class="login-system"><span class="dot" style="color:#66aa87"></span>Chạy tại máy của bạn · Dữ liệu lưu trong SQLite</div></div></section></main>`;
+    `<main class="login-page"><section class="login-story"><a class="brand" href="/"><span class="brand-mark">${icon('check')}</span><span class="brand-name">conduct<span class="brand-sub">STUDENT DEVELOPMENT</span></span></a><div class="login-copy"><div class="eyebrow">Đồng hành cùng sinh viên TDTU</div><h1>Mỗi nỗ lực.<br>Một dấu ấn<br>được ghi nhận.</h1><p>Không gian kết nối hoạt động, minh chứng và điểm rèn luyện. Theo dõi rõ ràng, đối soát chính xác, chủ động hành trình của bạn.</p><div class="login-benefits"><div>${icon('shield')}Một tài khoản trường, một không gian chung</div><div>${icon('chart')}Điểm chính thức và dự kiến minh bạch</div><div>${icon('link')}Mỗi hoạt động chỉ được tính một lần</div></div></div><footer>Đồ án ứng dụng quản lý điểm rèn luyện · 2026</footer></section><section class="login-form-area"><div class="login-form"><div class="eyebrow">Chào mừng trở lại</div><h2>Bắt đầu cùng Conduct</h2><p>Đăng nhập để xem điểm và quản lý hoạt động của bạn.</p>${s.auth?.googleConfigured ? `<a href="/auth/google" class="google-btn"><span class="google-g">G</span>Tiếp tục với tài khoản ${googleName}</a>` : `<button class="google-btn" data-action="google-help"><span class="google-g">G</span>Đăng nhập ${googleName}</button><p class="google-unavailable">Đăng nhập Google hiện chưa sẵn sàng.</p>`}${s.auth?.demoEnabled ? `<div class="login-divider">HOẶC KHÁM PHÁ BẢN DEMO</div>${(s.demoUsers || []).map((u) => `<button class="demo-account" data-action="demo-login" data-id="${e(u.id)}"><span class="avatar ${u.role === 'LECTURER' ? 'lecturer' : ''}">${icon(u.role === 'LECTURER' ? 'book' : 'users')}</span><span><strong>${u.role === 'LECTURER' ? 'Không gian giảng viên' : 'Không gian sinh viên'}${u.id === 'demo-student-2' ? ' · tài khoản 2' : ''}</strong><small>${e(u.email)}</small></span>${icon('arrow')}</button>`).join('')}` : ''}<div class="login-system"><span class="dot" style="color:#66aa87"></span>Đồng hành cùng hành trình rèn luyện của bạn</div></div></section></main>`;
   const err = new URLSearchParams(location.search).get('authError');
   if (err) {
     toast(err, true);
@@ -322,11 +324,10 @@ function renderShell() {
       )
       .join(
         '',
-      )}</nav><div class="sidebar-bottom"><div class="sidebar-note"><strong>${icon('shield')}Không gian minh họa</strong>Dữ liệu phục vụ demo học phần.<br>Quy chế theo PDF · hiệu lực 2025–2026.</div><div class="user-area"><span class="avatar">${e(initials(u.name))}</span><div class="user-info"><strong>${e(u.name)}</strong><small>${lecturer() ? 'Giảng viên / Cán bộ khoa' : 'Sinh viên'} · ${u.provider === 'google' ? 'Google' : 'Demo'}</small></div><button class="logout" data-action="logout" aria-label="Đăng xuất">${icon('logout')}</button></div></div></aside><div class="main"><header class="topbar"><div class="breadcrumb"><button class="icon-btn mobile-menu" data-action="toggle-menu" aria-label="Mở điều hướng">${icon('menu')}</button><span>Không gian làm việc</span><span>/</span><strong id="current-title">Tổng quan</strong></div><div class="topbar-right"><label class="period">${icon('calendar')}<select id="semester-select" aria-label="Chọn học kỳ">${(state.session.settings?.semesters || [state.semester]).map((s) => `<option value="${e(s)}" ${s === state.semester ? 'selected' : ''}>${e(semesterLabel(s))}</option>`).join('')}</select></label><span class="topbar-divider"></span>${badge(lecturer() ? 'Giảng viên' : 'Sinh viên', 'outline')}<span class="avatar" title="${e(u.email)}">${e(initials(u.name))}</span></div></header><main class="content" id="content"></main></div></div>`;
+      )}</nav><div class="sidebar-bottom"><div class="user-area"><span class="avatar">${e(initials(u.name))}</span><div class="user-info"><strong>${e(u.name)}</strong><small>${lecturer() ? 'Giảng viên / Cán bộ khoa' : 'Sinh viên'} · ${u.provider === 'google' ? 'Google' : 'Demo'}</small></div><button class="logout" data-action="logout" aria-label="Đăng xuất">${icon('logout')}</button></div></div></aside><div class="main"><header class="topbar"><div class="breadcrumb"><button class="icon-btn mobile-menu" data-action="toggle-menu" aria-label="Mở điều hướng">${icon('menu')}</button><span>Không gian làm việc</span><span>/</span><strong id="current-title">Tổng quan</strong></div><div class="topbar-right"><label class="period">${icon('calendar')}<select id="semester-select" aria-label="Chọn học kỳ">${(state.session.settings?.semesters || [state.semester]).map((s) => `<option value="${e(s)}" ${s === state.semester ? 'selected' : ''}>${e(semesterLabel(s))}</option>`).join('')}</select></label><span class="topbar-divider"></span>${badge(lecturer() ? 'Giảng viên' : 'Sinh viên', 'outline')}<span class="avatar" title="${e(u.email)}">${e(initials(u.name))}</span></div></header><main class="content" id="content"></main></div></div>`;
 }
 function finish(html) {
   $('#content').innerHTML =
-    `<div class="context-banner">${icon('alert')}<strong>Dữ liệu sinh viên minh họa</strong><span>Quy tắc theo PDF được cung cấp, hiệu lực 2025–2026. <a href="/docs/quy-che-ren-luyen-tdtu.pdf" target="_blank" rel="noopener">Xem quy chế ↗</a></span></div>` +
     html +
     `<footer class="footer"><span>Conduct · Ứng dụng quản lý điểm rèn luyện</span><span>${e(semesterLabel(state.semester))} · Bản demo</span></footer>`;
 }
@@ -353,7 +354,9 @@ async function navigate(v) {
     const qs = new URLSearchParams(state.filters[v] || {});
     if (v === 'reports' && !qs.has('academicYear'))
       qs.set('academicYear', state.semester?.slice(0, 9) || '2026-2027');
-    let d = v === 'import' ? {} : await api('/api/' + v + (qs.size ? '?' + qs : ''));
+    let d = ['import', 'regulations'].includes(v)
+      ? {}
+      : await api('/api/' + v + (qs.size ? '?' + qs : ''));
     if (v === 'dashboard' && !lecturer()) d.history = await api('/api/official-records');
     if (['import', 'claims', 'reports'].includes(v) && state.session.user.provider === 'google') {
       try {
@@ -373,6 +376,7 @@ async function navigate(v) {
       reconciliation: renderReconciliation,
       reports: renderReports,
       settings: renderSettings,
+      regulations: renderRegulations,
       legacy: renderLegacy,
       audit: renderAudit,
     })[v](d);
@@ -607,6 +611,33 @@ function criterionRateDescription(c) {
   if (c.unit === 'approved') return 'Theo văn bản phê duyệt';
   return `${c.points > 0 ? '+' : ''}${num(c.points)} điểm / ${c.unit === 'semester' ? 'học kỳ' : 'lần'}`;
 }
+
+function renderRegulations() {
+  state.regulationZoom = 100;
+  finish(
+    heading(
+      'Quy chế Điểm rèn luyện',
+      'Hiệu lực từ năm học 2025–2026. Đọc quy chế đánh giá kết quả rèn luyện ngay tại đây.',
+      `<a class="btn" href="/docs/quy-che-ren-luyen-tdtu.pdf" target="_blank" rel="noopener noreferrer">${icon('book')}Mở PDF trong tab mới</a><a class="btn primary" href="/docs/quy-che-ren-luyen-tdtu.pdf" download="Quy-che-Diem-ren-luyen-TDTU.pdf">${icon('download')}Tải PDF</a>`,
+    ) +
+      `<section class="card regulation-document" aria-label="Tài liệu quy chế điểm rèn luyện"><div class="regulation-toolbar"><span>10 trang nội dung</span><div class="regulation-zoom" aria-label="Phóng to tài liệu"><button class="btn small" type="button" data-action="regulation-zoom" data-zoom="out" aria-label="Thu nhỏ" disabled>−</button><output id="regulation-zoom-level" aria-live="polite">100%</output><button class="btn small" type="button" data-action="regulation-zoom" data-zoom="in" aria-label="Phóng to">+</button><button class="btn small" type="button" data-action="regulation-zoom" data-zoom="reset">Vừa khung</button></div></div><div class="regulation-pages" tabindex="0" aria-label="Nội dung quy chế; cuộn để đọc các trang"><div class="regulation-page-list">${Array.from({ length: 10 }, (_, index) => `<figure class="regulation-page" id="regulation-page-${index + 1}"><img src="/regulations/page-${String(index + 1).padStart(2, '0')}.png" alt="Quy chế Điểm rèn luyện — Trang ${index + 1}" decoding="async"><figcaption>Trang ${index + 1} / 10</figcaption></figure>`).join('')}</div></div><p class="regulation-fallback">Bạn có thể <a href="/docs/quy-che-ren-luyen-tdtu.pdf" target="_blank" rel="noopener noreferrer">mở PDF gốc trong tab mới</a> hoặc <a href="/docs/quy-che-ren-luyen-tdtu.pdf" download="Quy-che-Diem-ren-luyen-TDTU.pdf">tải về để đọc</a>.</p></section>`,
+  );
+}
+function zoomRegulations(direction) {
+  const previous = state.regulationZoom || 100;
+  const zoom =
+    direction === 'reset'
+      ? 100
+      : Math.max(100, Math.min(200, previous + (direction === 'in' ? 25 : -25)));
+  state.regulationZoom = zoom;
+  const pages = $('.regulation-page-list');
+  if (!pages) return;
+  pages.style.width = zoom + '%';
+  $('#regulation-zoom-level').textContent = zoom + '%';
+  $('[data-action="regulation-zoom"][data-zoom="out"]').disabled = zoom <= 100;
+  $('[data-action="regulation-zoom"][data-zoom="in"]').disabled = zoom >= 200;
+}
+
 function renderSettings(d) {
   const s = d.settings;
   finish(
@@ -794,6 +825,10 @@ document.addEventListener('click', async (event) => {
   const b = event.target.closest('[data-action]');
   if (!b) return;
   const a = b.dataset.action;
+  if (a === 'regulation-zoom') {
+    zoomRegulations(b.dataset.zoom);
+    return;
+  }
   try {
     if (a === 'navigate') {
       go(b.dataset.view);
@@ -819,7 +854,7 @@ document.addEventListener('click', async (event) => {
     if (a === 'google-help') {
       modal(
         'Kết nối Google TDTU',
-        '<p>Điền GOOGLE_CLIENT_ID và GOOGLE_CLIENT_SECRET trong tệp .env rồi khởi động lại máy chủ. Hướng dẫn từng bước nằm trong README của dự án.</p><p class="inline-note">Bạn có thể sử dụng tài khoản demo để đánh giá toàn bộ quy trình ngay bây giờ.</p><div class="form-actions">' +
+        '<p>Đăng nhập Google hiện chưa sẵn sàng. Vui lòng liên hệ người quản trị để được hỗ trợ.</p><div class="form-actions">' +
           btn('Đã hiểu', 'close-modal') +
           '</div>',
       );

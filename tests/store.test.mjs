@@ -1004,6 +1004,121 @@ test('new Google students remain scoped and appear in the unassigned class witho
   assert.equal(store.dashboard(student).classes[0].total, 1);
 });
 
+test('Google role changes preserve the existing student identity, scores and claims in both directions', (t) => {
+  const { store, student, lecturer } = fixture(t);
+  const before = summary(store, student);
+  const claims = store.claims(student).claims.map((claim) => claim.id);
+  const records = store.officialRecords(student).records.map((record) => record.id);
+  for (const role of ['STUDENT', 'LECTURER', 'STUDENT', 'LECTURER', 'STUDENT']) {
+    const user = store.ensureGoogleUser({
+      sub: 'role-changing-student',
+      email: student.email,
+      name: 'Sinh viên đổi vai trò',
+      role,
+      authAudience: 'external',
+    });
+    assert.equal(user.id, student.id);
+    assert.equal(user.studentId, student.studentId);
+    assert.equal(user.role, role);
+    const ownProfile = store.students(lecturer).students.find((item) => item.id === user.studentId);
+    assert.equal(ownProfile.code, before.code);
+    assert.deepEqual(
+      [ownProfile.officialTotal, ownProfile.pendingTotal, ownProfile.projectedTotal],
+      [before.officialTotal, before.pendingTotal, before.projectedTotal],
+    );
+    if (role === 'STUDENT') {
+      rejects(() => store.reports(user), 403);
+      assert.deepEqual(
+        store.claims(user).claims.map((claim) => claim.id),
+        claims,
+      );
+      assert.deepEqual(
+        store.officialRecords(user).records.map((record) => record.id),
+        records,
+      );
+    } else {
+      assert.equal(store.reports(user).stats.total, 30);
+    }
+  }
+});
+
+test('external lecturer downgraded to student gets one empty profile and keeps it through later role changes', (t) => {
+  const { store, lecturer } = fixture(t);
+  const identity = {
+    sub: 'external-role-changing-sub',
+    email: '  Personal.Teacher@GMAIL.COM  ',
+    name: 'Tài khoản cá nhân',
+    authAudience: ' EXTERNAL ',
+  };
+  const first = store.ensureGoogleUser({ ...identity, role: 'LECTURER' });
+  assert.equal(first.email, 'personal.teacher@gmail.com');
+  assert.equal(first.studentId, null);
+  let studentId;
+  for (const role of ['STUDENT', 'LECTURER', 'STUDENT']) {
+    const user = store.ensureGoogleUser({ ...identity, role });
+    assert.equal(user.id, first.id);
+    assert.equal(user.role, role);
+    studentId ??= user.studentId;
+    assert.ok(studentId);
+    assert.equal(user.studentId, studentId);
+    const profile = store.students(lecturer).students.find((item) => item.id === studentId);
+    assert.equal(profile.evaluationStatus, 'no_data');
+    assert.equal(profile.hasOfficialData, false);
+    assert.equal(profile.officialClassification, null);
+    assert.equal(profile.pendingTotal, 0);
+    if (role === 'STUDENT') {
+      assert.deepEqual(store.claims(user).claims, []);
+      assert.deepEqual(store.officialRecords(user).records, []);
+      rejects(() => store.reports(user), 403);
+    }
+  }
+  assert.equal(store.students(lecturer).students.length, 31);
+});
+
+test('external Google students use distinct empty profiles and retain identity collision protections', (t) => {
+  const { store, lecturer } = fixture(t);
+  const first = store.ensureGoogleUser({
+    sub: 'external-student-one',
+    email: 'new.person@gmail.com',
+    name: 'Sinh viên ngoài miền trường',
+    authAudience: 'external',
+  });
+  const second = store.ensureGoogleUser({
+    sub: 'external-student-two',
+    email: 'new.person@another.edu.vn',
+    name: 'Sinh viên cùng phần tên email',
+    authAudience: 'external',
+  });
+  assert.notEqual(first.studentId, second.studentId);
+  assert.notEqual(summary(store, first).code, summary(store, second).code);
+  for (const user of [first, second]) {
+    assert.equal(user.role, 'STUDENT');
+    assert.equal(summary(store, user).evaluationStatus, 'no_data');
+    assert.equal(summary(store, user).hasOfficialData, false);
+    assert.deepEqual(store.claims(user).claims, []);
+    assert.deepEqual(store.officialRecords(user).records, []);
+    assert.deepEqual(
+      store.students(user).students.map((item) => item.id),
+      [user.studentId],
+    );
+    rejects(() => store.reports(user), 403);
+  }
+  for (const identity of [
+    { sub: 'external-student-one', email: second.email },
+    { sub: 'new-attacker-sub', email: first.email },
+  ]) {
+    rejects(() => store.ensureGoogleUser({ ...identity, authAudience: 'external' }), 403);
+  }
+  rejects(() => store.ensureGoogleUser({ sub: 'outside', email: first.email }), 403);
+  rejects(() =>
+    store.ensureGoogleUser({ sub: 'bad-email', email: 'bad@@gmail.com', authAudience: 'external' }),
+  );
+  rejects(() =>
+    store.ensureGoogleUser({ sub: 'bad-mode', email: first.email, authAudience: 'invalid' }),
+  );
+  assert.equal(store.students(lecturer).students.length, 32);
+});
+
 test('one event may have separate participation and award criteria, with independent idempotency and exact matching', (t) => {
   const { store, lecturer, student } = fixture(t);
   const activity = store.createActivity(lecturer, {

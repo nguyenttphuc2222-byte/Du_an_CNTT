@@ -56,6 +56,11 @@ export function createAuth({ store, config }) {
   const baseUrl = configuredBase.origin;
   const secure = configuredBase.protocol === 'https:';
   const demoEnabled = config.demoEnabled === true;
+  const authAudience = String(config.authAudience ?? 'internal')
+    .trim()
+    .toLowerCase();
+  if (!['internal', 'external'].includes(authAudience))
+    throw new Error('GOOGLE_AUTH_AUDIENCE phải là internal hoặc external.');
   const googleConfigured = Boolean(config.googleClientId && config.googleClientSecret);
   const allowedDomains = new Set(
     (config.allowedDomains ?? DEFAULT_DOMAINS).map((value) => value.trim().toLowerCase()),
@@ -112,7 +117,7 @@ export function createAuth({ store, config }) {
   function snapshot(user) {
     return {
       user: publicUser(user),
-      auth: { googleConfigured, demoEnabled },
+      auth: { googleConfigured, demoEnabled, authAudience },
       demoUsers: demoEnabled
         ? store.getDemoUsers().map((user) => publicUser({ ...user, provider: 'demo' }))
         : [],
@@ -161,7 +166,7 @@ export function createAuth({ store, config }) {
   function requireGoogleSession(req) {
     const session = currentSession(req),
       user = getUser(req);
-    if (!session || !user) throw fail(401, 'Vui lòng đăng nhập bằng tài khoản Google TDTU.');
+    if (!session || !user) throw fail(401, 'Vui lòng đăng nhập bằng tài khoản Google.');
     if (session.authMethod !== 'google' || !session.googleSub)
       throw fail(
         403,
@@ -202,7 +207,7 @@ export function createAuth({ store, config }) {
       include_granted_scopes: purpose === 'workspace' ? true : undefined,
       prompt: purpose === 'workspace' ? 'consent' : 'select_account',
       login_hint: identity?.user.email,
-      hd: '*',
+      ...(authAudience === 'internal' ? { hd: '*' } : {}),
     });
     res.writeHead(303, { Location: authorizationUrl });
     res.end();
@@ -266,13 +271,16 @@ export function createAuth({ store, config }) {
     )
       throw fail(400, 'Thông tin xác thực Google không hợp lệ. Vui lòng đăng nhập lại.');
     const email = typeof payload.email === 'string' ? payload.email.toLowerCase().trim() : '';
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 300)
+      throw fail(400, 'Email Google không hợp lệ.');
     const parts = email.split('@'),
-      hostedDomain = typeof payload.hd === 'string' ? payload.hd.toLowerCase() : '';
+      hostedDomain = typeof payload.hd === 'string' ? payload.hd.trim().toLowerCase() : '';
     if (
-      parts.length !== 2 ||
-      !parts[0] ||
-      !allowedDomains.has(parts[1]) ||
-      !allowedHostedDomains.has(hostedDomain)
+      authAudience === 'internal' &&
+      (!DEFAULT_DOMAINS.includes(parts[1]) ||
+        !allowedDomains.has(parts[1]) ||
+        !DEFAULT_DOMAINS.includes(hostedDomain) ||
+        !allowedHostedDomains.has(hostedDomain))
     )
       throw fail(403, 'Ứng dụng chỉ dành cho tài khoản Google Workspace TDTU được cho phép.');
     if (attempt.purpose === 'workspace') {
@@ -299,12 +307,16 @@ export function createAuth({ store, config }) {
       res.end();
       return;
     }
-    const role = lecturerEmails.has(email) ? 'LECTURER' : 'STUDENT';
+    const role =
+      lecturerEmails.has(email) || (authAudience === 'internal' && parts[1] === 'tdtu.edu.vn')
+        ? 'LECTURER'
+        : 'STUDENT';
     const user = store.ensureGoogleUser({
       sub: payload.sub,
       email,
       name: typeof payload.name === 'string' && payload.name.trim() ? payload.name.trim() : email,
       role,
+      authAudience,
     });
     createSession(req, res, user, 'google', payload.sub);
     res.writeHead(303, { Location: '/' });

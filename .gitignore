@@ -9,3 +9,11 @@ playwright-report/
 test-results/
 
 artifacts/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.zip
+.tools/
+Thumbs.db
+.DS_Store

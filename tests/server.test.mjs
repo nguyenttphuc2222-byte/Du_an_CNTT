@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import ExcelJS from 'exceljs';
+import { OAuth2Client } from 'google-auth-library';
 import { createApp } from '../src/server.mjs';
 
-async function setup(t) {
+async function setup(t, config = {}) {
   const app = await createApp({
     port: 0,
     dbPath: ':memory:',
-    config: { demoEnabled: true, googleClientId: '', googleClientSecret: '' },
+    config: { demoEnabled: true, googleClientId: '', googleClientSecret: '', ...config },
   });
   await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -124,6 +125,9 @@ test('HTTP rejects cross-origin mutations, malformed JSON and unconfigured Googl
   const html = await fetch(base + '/');
   assert.equal(html.status, 200);
   assert.ok(html.headers.get('content-security-policy').includes("script-src 'self'"));
+  assert.ok(html.headers.get('content-security-policy').includes("frame-src 'self'"));
+  assert.ok(html.headers.get('content-security-policy').includes("frame-ancestors 'none'"));
+  assert.equal(html.headers.get('x-frame-options'), 'DENY');
 });
 
 test('PDF source and semester assessment routes enforce permissions and apply six-category scoring', async (t) => {
@@ -133,6 +137,9 @@ test('PDF source and semester assessment routes enforce permissions and apply si
   const pdf = await lecturer('/docs/quy-che-ren-luyen-tdtu.pdf');
   assert.equal(pdf.status, 200);
   assert.equal(pdf.headers.get('content-type'), 'application/pdf');
+  assert.equal(pdf.headers.get('x-frame-options'), 'SAMEORIGIN');
+  assert.ok(pdf.headers.get('content-security-policy').includes("frame-ancestors 'self'"));
+  assert.ok(pdf.headers.get('content-disposition').startsWith('inline;'));
   assert.equal(
     Buffer.from(await pdf.arrayBuffer())
       .subarray(0, 5)
@@ -207,4 +214,149 @@ test('PDF source and semester assessment routes enforce permissions and apply si
   summary = (await (await student('/api/dashboard?semester=' + profile.semester)).json()).student;
   assert.equal(summary.officialTotal, null);
   assert.equal(summary.evaluationStatus, 'not_evaluated');
+});
+
+test('HTTP exposes only the normalized authentication audience and rejects unknown startup modes', async (t) => {
+  for (const audience of ['internal', 'external']) {
+    const { client } = await setup(t, { authAudience: ` ${audience.toUpperCase()} ` });
+    const response = await client()('/api/session');
+    assert.equal(response.status, 200);
+    const session = await response.json();
+    assert.equal(session.auth.authAudience, audience);
+    assert.equal('lecturerEmails' in session.auth, false);
+    assert.equal('googleClientSecret' in session.auth, false);
+  }
+  await assert.rejects(
+    createApp({ port: 0, dbPath: ':memory:', config: { authAudience: 'auto' } }),
+    /GOOGLE_AUTH_AUDIENCE/,
+  );
+});
+
+test('HTTP Google callbacks apply each audience policy to actual stored users and protected routes', async (t) => {
+  let payload;
+  t.mock.method(OAuth2Client.prototype, 'getToken', async () => ({
+    tokens: { id_token: 'test-id-token' },
+  }));
+  t.mock.method(OAuth2Client.prototype, 'verifyIdToken', async ({ audience }) => {
+    assert.equal(audience, 'http-test-client');
+    return { getPayload: () => payload };
+  });
+  for (const authAudience of ['internal', 'external']) {
+    const { client } = await setup(t, {
+      authAudience,
+      googleClientId: 'http-test-client',
+      googleClientSecret: 'http-test-secret',
+      lecturerEmails: ['523h0025@student.tdtu.edu.vn', 'teacher@gmail.com'],
+    });
+    const cases =
+      authAudience === 'internal'
+        ? [
+            ['new@student.tdtu.edu.vn', 'STUDENT'],
+            ['staff@tdtu.edu.vn', 'LECTURER'],
+            ['523h0025@student.tdtu.edu.vn', 'LECTURER'],
+            ['teacher@gmail.com', null],
+          ]
+        : [
+            ['new@gmail.com', 'STUDENT'],
+            ['staff@tdtu.edu.vn', 'STUDENT'],
+            ['teacher@gmail.com', 'LECTURER'],
+          ];
+    for (const [email, role] of cases) {
+      const request = client();
+      const started = await request('/auth/google');
+      assert.equal(started.status, 303);
+      const consent = new URL(started.headers.get('location'));
+      assert.equal(consent.searchParams.get('hd'), authAudience === 'internal' ? '*' : null);
+      payload = {
+        iss: 'https://accounts.google.com',
+        aud: 'http-test-client',
+        sub: `${authAudience}-${email}`,
+        email,
+        email_verified: true,
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        name: 'Tài khoản kiểm thử',
+        nonce: consent.searchParams.get('nonce'),
+        ...(email.endsWith('tdtu.edu.vn') ? { hd: 'tdtu.edu.vn' } : {}),
+      };
+      const callback = await request(
+        '/auth/google/callback?' +
+          new URLSearchParams({
+            code: 'test-code',
+            state: consent.searchParams.get('state'),
+          }),
+      );
+      assert.equal(callback.status, 303);
+      if (!role) {
+        assert.match(callback.headers.get('location'), /authError=/);
+        assert.equal((await (await request('/api/session')).json()).user, null);
+        assert.equal((await request('/api/dashboard')).status, 401);
+        continue;
+      }
+      assert.equal(callback.headers.get('location'), '/');
+      const session = await (await request('/api/session')).json();
+      assert.equal(session.auth.authAudience, authAudience);
+      assert.equal(session.user.role, role);
+      assert.equal(session.user.email, email);
+      assert.equal(session.user.provider, 'google');
+      assert.equal((await request('/api/dashboard')).status, 200);
+      assert.equal((await request('/api/audit')).status, role === 'LECTURER' ? 200 : 403);
+      if (role === 'STUDENT') {
+        assert.ok(session.user.studentId);
+        const dashboard = await (await request('/api/dashboard')).json();
+        assert.equal(dashboard.student.hasOfficialData, false);
+        assert.equal(dashboard.student.pendingCount, 0);
+        assert.equal(dashboard.student.id, session.user.studentId);
+        assert.equal((await request('/api/students')).status, 403);
+        const official = await (await request('/api/official-records')).json();
+        assert.deepEqual(official.records, []);
+      }
+    }
+  }
+});
+
+test('regulation reader serves exactly the ten document page images without exposing project files', async (t) => {
+  const { client } = await setup(t);
+  const request = client();
+  for (let page = 1; page <= 10; page++) {
+    const response = await request(`/regulations/page-${String(page).padStart(2, '0')}.png`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'image/png');
+    assert.equal(
+      Buffer.from(await response.arrayBuffer())
+        .subarray(0, 8)
+        .toString('hex'),
+      '89504e470d0a1a0a',
+    );
+  }
+  for (const path of [
+    '/regulations/page-00.png',
+    '/regulations/page-11.png',
+    '/regulations/README.md',
+    '/regulations/%2e%2e/.env',
+  ]) {
+    assert.equal((await request(path)).status, 404);
+  }
+});
+
+test('Google-only mode removes every published demo shortcut and blocks all three demo identities', async (t) => {
+  const { client } = await setup(t, {
+    demoEnabled: false,
+    googleClientId: 'google-only-client',
+    googleClientSecret: 'google-only-secret',
+  });
+  const request = client();
+  const session = await (await request('/api/session')).json();
+  assert.equal(session.auth.demoEnabled, false);
+  assert.equal(session.auth.googleConfigured, true);
+  assert.deepEqual(session.demoUsers, []);
+  for (const userId of ['demo-lecturer', 'demo-student', 'demo-student-2']) {
+    assert.equal(
+      (await request('/api/auth/demo', { method: 'POST', body: { userId } })).status,
+      403,
+    );
+  }
+  assert.equal((await (await request('/api/session')).json()).user, null);
+  const google = await request('/auth/google');
+  assert.equal(google.status, 303);
+  assert.equal(new URL(google.headers.get('location')).origin, 'https://accounts.google.com');
 });

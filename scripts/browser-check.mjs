@@ -20,6 +20,88 @@ await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
 const baseURL = `http://127.0.0.1:${app.server.address().port}`;
 let browser;
 const errors = [];
+const sharedViews = ['dashboard', 'activities', 'claims', 'regulations'];
+const lecturerViews = [
+  'students',
+  'import',
+  'reconciliation',
+  'reports',
+  'settings',
+  'legacy',
+  'audit',
+];
+
+async function assertRegulationReader(page, context) {
+  await page.locator('.nav-item[data-view="regulations"]').click();
+  await expect(page.locator('#content h1')).toHaveText('Quy chế Điểm rèn luyện');
+  const images = page.locator('.regulation-page img');
+  await expect(images).toHaveCount(10);
+  await expect(page.locator('iframe.regulation-reader')).toHaveCount(0);
+  const sources = Array.from(
+    { length: 10 },
+    (_, i) => `/regulations/page-${String(i + 1).padStart(2, '0')}.png`,
+  );
+  assert.deepEqual(
+    await images.evaluateAll((items) => items.map((img) => img.getAttribute('src'))),
+    sources,
+  );
+  const decoded = await images.evaluateAll((items) =>
+    Promise.all(
+      items.map(async (img) => {
+        await img.decode();
+        return { complete: img.complete, width: img.naturalWidth, height: img.naturalHeight };
+      }),
+    ),
+  );
+  assert.ok(
+    decoded.every((img) => img.complete && img.width > 0 && img.height > 0),
+    'All regulation pages must decode into visible image content',
+  );
+  await expect(images.first()).toBeInViewport();
+  await expect(page.locator('.regulation-page figcaption')).toHaveText(
+    Array.from({ length: 10 }, (_, i) => `Trang ${i + 1} / 10`),
+  );
+  const responses = await Promise.all(sources.map((source) => context.request.get(source)));
+  for (const response of responses) {
+    assert.equal(response.status(), 200);
+    assert.match(response.headers()['content-type'], /image\/png/);
+  }
+  const pdf = await context.request.get('/docs/quy-che-ren-luyen-tdtu.pdf');
+  assert.equal(pdf.status(), 200);
+  assert.match(pdf.headers()['content-type'], /application\/pdf/);
+  await expect(page.locator('.context-banner, .sidebar-note, .login-disclaimer')).toHaveCount(0);
+}
+async function assertRegulationZoom(page) {
+  for (let step = 0; step < 4; step++)
+    await page.getByRole('button', { name: 'Phóng to', exact: true }).click();
+  await expect(page.locator('#regulation-zoom-level')).toHaveText('200%');
+  await expect(page.getByRole('button', { name: 'Phóng to', exact: true })).toBeDisabled();
+  assert.equal(
+    await page.locator('.regulation-pages').evaluate((el) => el.scrollWidth > el.clientWidth),
+    true,
+    'Zoomed pages must scroll inside the reader',
+  );
+  await assertNoMobileOverflow(page);
+  await page.screenshot({
+    path: path.join(directory, '04-mobile-regulations-zoom.png'),
+    fullPage: true,
+  });
+  await page.getByRole('button', { name: 'Vừa khung', exact: true }).click();
+  await expect(page.locator('#regulation-zoom-level')).toHaveText('100%');
+  await expect(page.getByRole('button', { name: 'Thu nhỏ', exact: true })).toBeDisabled();
+}
+
+async function assertNoMobileOverflow(page) {
+  await page.waitForFunction(
+    () => innerWidth > 760 || document.querySelector('.sidebar').getBoundingClientRect().right <= 1,
+  );
+  await expect(page.locator('.toast')).toHaveCount(0, { timeout: 8000 });
+  assert.equal(
+    await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 2),
+    false,
+    'Mobile must not overflow horizontally',
+  );
+}
 try {
   browser = await chromium.launch({
     channel: process.env.BROWSER_CHANNEL || 'msedge',
@@ -28,28 +110,48 @@ try {
   const context = await browser.newContext({ baseURL, viewport: { width: 1440, height: 1000 } });
   const page = await context.newPage();
   page.on('pageerror', (err) => errors.push(err.message));
+  page.on('console', (message) => {
+    if (
+      message.type() === 'error' &&
+      /refused to (?:frame|display)|violates.*frame|frame-ancestors/i.test(message.text())
+    )
+      errors.push(message.text());
+  });
+  for (const audience of ['internal', 'external']) {
+    await page.route('**/api/session', async (route) => {
+      const response = await route.fetch();
+      const data = await response.json();
+      data.auth = { ...data.auth, googleConfigured: true, authAudience: audience };
+      await route.fulfill({ response, json: data });
+    });
+    await page.goto('/');
+    await expect(page.locator('a.google-btn')).toHaveText(
+      audience === 'external'
+        ? 'GTiếp tục với tài khoản Google'
+        : 'GTiếp tục với tài khoản Google TDTU',
+    );
+    await expect(page.locator('.login-disclaimer')).toHaveCount(0);
+    await page.unroute('**/api/session');
+  }
+  console.log('PASS: Google login labels follow Internal / External audience');
   await page.goto('/');
   await expect(page.locator('.demo-account')).toHaveCount(3);
   await page.screenshot({ path: path.join(directory, '01-login.png'), fullPage: true });
   await page.locator('[data-action="demo-login"][data-id="demo-lecturer"]').click();
   await expect(page.locator('#content h1')).toHaveText('Tổng quan rèn luyện');
   await page.screenshot({ path: path.join(directory, '02-dashboard.png'), fullPage: true });
-  for (const view of [
-    'students',
-    'activities',
-    'claims',
-    'import',
-    'reconciliation',
-    'reports',
-    'settings',
-    'legacy',
-    'audit',
-  ]) {
+  for (const view of [...sharedViews, ...lecturerViews]) {
     await page.locator(`.nav-item[data-view="${view}"]`).click();
     await expect(page.locator('#content h1')).toBeVisible();
     await expect(page.locator('#content .error-panel')).toHaveCount(0);
+    await expect(page.locator('.context-banner, .sidebar-note, .login-disclaimer')).toHaveCount(0);
   }
-  console.log('PASS: lecturer login and all ten views');
+  await assertRegulationReader(page, context);
+  await page.screenshot({
+    path: path.join(directory, '02-lecturer-regulations.png'),
+    fullPage: true,
+  });
+  console.log('PASS: lecturer permitted views, all regulation pages decoded and removed banners');
   await page.locator('.nav-item[data-view="settings"]').click();
   await expect(page.locator('a[href="/docs/quy-che-ren-luyen-tdtu.pdf"]').first()).toBeVisible();
   assert.equal((await context.request.get('/docs/quy-che-ren-luyen-tdtu.pdf')).status(), 200);
@@ -117,6 +219,14 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('.mobile-menu').click();
   await expect(page.locator('.sidebar.open')).toBeVisible();
+  await assertRegulationReader(page, context);
+  await assertNoMobileOverflow(page);
+  await assertRegulationZoom(page);
+  await page.screenshot({
+    path: path.join(directory, '04-mobile-regulations.png'),
+    fullPage: true,
+  });
+  await page.locator('.mobile-menu').click();
   await page.locator('.nav-item[data-view="dashboard"]').click();
   await expect(page.locator('#content h1')).toBeVisible();
   await page.waitForFunction(
@@ -132,8 +242,28 @@ try {
   await expect(page.locator('.demo-account')).toHaveCount(3);
   await page.locator('[data-action="demo-login"][data-id="demo-student"]').click();
   await expect(page.locator('#content h1')).toBeVisible();
-  await expect(page.locator('.nav-item')).toHaveCount(3);
-  await expect(page.locator('.nav-item[data-view="import"]')).toHaveCount(0);
+  for (const view of sharedViews)
+    await expect(page.locator(`.nav-item[data-view="${view}"]`)).toBeVisible();
+  for (const view of lecturerViews)
+    await expect(page.locator(`.nav-item[data-view="${view}"]`)).toHaveCount(0);
+  await expect(page.locator('.context-banner, .sidebar-note, .login-disclaimer')).toHaveCount(0);
+  await assertRegulationReader(page, context);
+  await page.screenshot({
+    path: path.join(directory, '06-student-regulations-desktop.png'),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await assertNoMobileOverflow(page);
+  await page.screenshot({
+    path: path.join(directory, '05-student-regulations-mobile.png'),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/#settings');
+  await expect(page.locator('#content h1')).toHaveText('Hành trình rèn luyện của bạn');
+  await expect(page.locator('form[data-form="settings"]')).toHaveCount(0);
+  assert.equal((await context.request.get('/api/reports')).status(), 403);
+  console.log('PASS: student inline regulations, mobile layout and admin view protection');
   const studentDashboard = await (await context.request.get('/api/dashboard')).json();
   assert.equal(studentDashboard.student.officialTotal, 50);
   await expect(page.locator('.student-hero h2')).toHaveText('Chào Nguyễn Trần Trọng Phúc!');
