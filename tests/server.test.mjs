@@ -299,7 +299,11 @@ test('HTTP Google callbacks apply each audience policy to actual stored users an
       assert.equal(session.user.email, email);
       assert.equal(session.user.provider, 'google');
       assert.equal((await request('/api/dashboard')).status, 200);
-      assert.equal((await request('/api/audit')).status, role === 'LECTURER' ? 200 : 403);
+      assert.equal(
+        (await request('/api/audit')).status,
+        403,
+        'Lecturer role alone does not grant coordinator capability',
+      );
       if (role === 'STUDENT') {
         assert.ok(session.user.studentId);
         const dashboard = await (await request('/api/dashboard')).json();

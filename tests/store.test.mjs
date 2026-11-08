@@ -4,8 +4,10 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openStore } from '../src/store.mjs';
+import { openStore as openConfiguredStore } from '../src/store.mjs';
 import { RULE_VERSION, CATEGORIES, CLASSIFICATIONS } from '../src/regulations.mjs';
+// These scoring fixtures explicitly enable the published demo coordinator.
+const openStore = (options = {}) => openConfiguredStore({ demoCoordinator: true, ...options });
 const SEMESTER = '2026-2027-HK1';
 const SECOND = '2026-2027-HK2';
 function fixture(t) {
@@ -968,7 +970,11 @@ test('Google names synchronize across login, dashboard, roster, claims, records 
       role: 'LECTURER',
     });
     assert.equal(faculty.id, 'demo-lecturer');
-    assert.equal(store.students(faculty).students.length, 30);
+    assert.equal(
+      store.students(faculty).students.length,
+      0,
+      'Google-linked lecturer has no class assignment by default',
+    );
     store.close();
     const raw = new DatabaseSync(dbPath);
     raw.prepare('UPDATE students SET name=? WHERE id=?').run('Tên cũ cần sửa', linked.studentId);
@@ -981,7 +987,7 @@ test('Google names synchronize across login, dashboard, roster, claims, records 
   }
 });
 
-test('new Google students remain scoped and appear in the unassigned class without becoming zero-score official records', (t) => {
+test('new Google students keep an empty identity and enter the semester roster only through explicit enrollment', (t) => {
   const { store, lecturer } = fixture(t);
   const student = store.ensureGoogleUser({
     sub: 'new-sub',
@@ -998,10 +1004,29 @@ test('new Google students remain scoped and appear in the unassigned class witho
   const report = store.reports(lecturer);
   assert.equal(
     report.stats.byClass.reduce((sum, c) => sum + c.total, 0),
-    31,
+    30,
   );
-  assert.equal(store.reports(lecturer, { classId: 'unassigned' }).stats.total, 1);
-  assert.equal(store.dashboard(student).classes[0].total, 1);
+  assert.equal(store.reports(lecturer, { classId: 'unassigned' }).stats.total, 0);
+  assert.deepEqual(store.dashboard(student).classes, []);
+  store.commitRoster(lecturer, {
+    rows: [
+      {
+        sourceId: 'NEW-GOOGLE-ENROLLMENT',
+        studentCode: s.code,
+        name: s.name,
+        email: student.email,
+        classId: 'cls1',
+        className: store
+          .roster(lecturer, { semester: SEMESTER })
+          .classes.find((item) => item.id === 'cls1').name,
+        semester: SEMESTER,
+      },
+    ],
+    reason: 'Ghi danh sinh viên theo danh sách đã đối chiếu',
+  });
+  assert.equal(store.students(lecturer).students.length, 31);
+  assert.equal(summary(store, student).hasOfficialData, false);
+  assert.equal(summary(store, student).officialClassification, null);
 });
 
 test('Google role changes preserve the existing student identity, scores and claims in both directions', (t) => {
@@ -1037,7 +1062,11 @@ test('Google role changes preserve the existing student identity, scores and cla
         records,
       );
     } else {
-      assert.equal(store.reports(user).stats.total, 30);
+      assert.equal(
+        store.reports(user).stats.total,
+        0,
+        'Promotion preserves identity without inventing class assignments',
+      );
     }
   }
 });
@@ -1061,6 +1090,28 @@ test('external lecturer downgraded to student gets one empty profile and keeps i
     studentId ??= user.studentId;
     assert.ok(studentId);
     assert.equal(user.studentId, studentId);
+    if (
+      role === 'STUDENT' &&
+      !store.students(lecturer).students.some((item) => item.id === studentId)
+    ) {
+      const emptyProfile = summary(store, user);
+      store.commitRoster(lecturer, {
+        rows: [
+          {
+            sourceId: 'ROLE-CHANGE-ENROLLMENT',
+            studentCode: emptyProfile.code,
+            name: user.name,
+            email: user.email,
+            classId: 'cls1',
+            className: store
+              .roster(lecturer, { semester: SEMESTER })
+              .classes.find((item) => item.id === 'cls1').name,
+            semester: SEMESTER,
+          },
+        ],
+        reason: 'Ghi danh hồ sơ riêng mà không đổi định danh khi đổi vai trò',
+      });
+    }
     const profile = store.students(lecturer).students.find((item) => item.id === studentId);
     assert.equal(profile.evaluationStatus, 'no_data');
     assert.equal(profile.hasOfficialData, false);
@@ -1116,7 +1167,11 @@ test('external Google students use distinct empty profiles and retain identity c
   rejects(() =>
     store.ensureGoogleUser({ sub: 'bad-mode', email: first.email, authAudience: 'invalid' }),
   );
-  assert.equal(store.students(lecturer).students.length, 32);
+  assert.equal(
+    store.students(lecturer).students.length,
+    30,
+    'Unenrolled Google profiles do not silently enter the term roster',
+  );
 });
 
 test('one event may have separate participation and award criteria, with independent idempotency and exact matching', (t) => {

@@ -18,6 +18,7 @@ services:
       ALLOWED_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS:-student.tdtu.edu.vn,tdtu.edu.vn}
       ALLOWED_HOSTED_DOMAINS: ${ALLOWED_HOSTED_DOMAINS:-student.tdtu.edu.vn,tdtu.edu.vn}
       LECTURER_EMAILS: ${LECTURER_EMAILS-523h0025@student.tdtu.edu.vn}
+      COORDINATOR_EMAILS: ${COORDINATOR_EMAILS:-}
     volumes:
       - conduct-data:/app/data
     init: true

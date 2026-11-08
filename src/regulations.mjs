@@ -681,9 +681,24 @@ export function annualResult(semesterSummaries) {
   const semesterIds = semesterSummaries.map((item) => item?.semester).filter(Boolean);
   if (new Set(semesterIds).size !== semesterIds.length)
     invalid('Hai học kỳ năm học không được trùng nhau.');
-  const parsed = semesterIds.map((value) => /^(\d{4})-(\d{4})-HK([12])$/.exec(value));
-  if (parsed.length === 2 && parsed.every(Boolean) && parsed[0][1] !== parsed[1][1])
+  const parsed = semesterSummaries.map((item) =>
+    /^(\d{4})-(\d{4})-HK([12])$/.exec(item.semester || ''),
+  );
+  const academicYears = semesterSummaries.map(
+    (item, index) =>
+      item.academicYear || (parsed[index] ? `${parsed[index][1]}-${parsed[index][2]}` : null),
+  );
+  if (
+    academicYears.length === 2 &&
+    academicYears.every(Boolean) &&
+    academicYears[0] !== academicYears[1]
+  )
     invalid('Hai học kỳ phải thuộc cùng một năm học.');
+  const terms = semesterSummaries.map(
+    (item, index) => item.term ?? (parsed[index] ? Number(parsed[index][3]) : null),
+  );
+  if (terms.length === 2 && terms.every((term) => term !== null) && terms[0] === terms[1])
+    invalid('Hai học kỳ năm học không được trùng thứ tự.');
   const missing = semesterSummaries
     .filter((item) => summaryState(item) !== 'evaluated')
     .map((item) => item.semester || 'Học kỳ chưa có dữ liệu');

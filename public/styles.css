@@ -13,6 +13,52 @@
   --radius: 15px;
   --shadow: 0 8px 30px #193d3410;
 }
+.semester-notice {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  margin-bottom: 22px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+.semester-notice p {
+  margin-top: 5px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.semester-policy {
+  margin: 0 0 20px;
+  max-width: 980px;
+  color: var(--muted);
+}
+.semester-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  max-width: 270px;
+}
+.semester-reason {
+  min-width: 160px;
+  max-width: 280px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.semester-history article {
+  margin-top: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+[data-semester-write]:disabled,
+[data-semester-submit]:disabled {
+  cursor: not-allowed;
+}
+@media (max-width: 640px) {
+  .semester-notice {
+    flex-direction: column;
+    gap: 10px;
+  }
+}
 * {
   box-sizing: border-box;
 }
@@ -2446,6 +2492,189 @@ input[readonly] {
   background: #fff;
   border: 1px solid #d8dfda;
   box-shadow: 0 3px 15px #1d3d3212;
+}
+.roster-policy {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.85;
+  margin: 0 0 22px;
+}
+.workflow-policy {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.85;
+  margin: 0 0 22px;
+}
+.workflow-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.75;
+}
+.workflow-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 17px;
+}
+.workflow-timeline article {
+  padding: 17px 0;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.workflow-timeline article:last-child {
+  border-bottom: none;
+}
+.workflow-timeline p {
+  margin: 8px 0 0;
+  line-height: 1.8;
+}
+.workflow-warning {
+  color: #8b4c17;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.workflow-recipient-list {
+  padding-left: 20px;
+  line-height: 1.9;
+  overflow-wrap: anywhere;
+}
+.appeals-table td,
+.evidence-table td {
+  vertical-align: top;
+}
+.appeals-table .workflow-text {
+  max-width: 390px;
+}
+.record-superseded .points {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.record-superseded .badge {
+  margin-top: 6px;
+}
+.notification-shortcut {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--ink);
+  background: #fff;
+  cursor: pointer;
+}
+.notification-shortcut:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 3px;
+}
+.workflow-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 15px;
+}
+.workflow-comparison p {
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+#notification-unread {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 12px;
+  background: #a3422d;
+  color: #fff;
+  font-size: 9px;
+  line-height: 18px;
+  font-weight: 700;
+  padding: 0 4px;
+}
+.notification-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px;
+  border-bottom: 1px solid var(--line);
+}
+.notification-item:last-child {
+  border-bottom: none;
+}
+.notification-item.unread {
+  background: #f3faf6;
+  border-left: 3px solid #169d82;
+}
+.notification-item > div:first-child {
+  min-width: 0;
+}
+.notification-item h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+.notification-item p {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.notification-item .workflow-actions {
+  margin-top: 0;
+  flex-shrink: 0;
+}
+@media (max-width: 760px) {
+  .workflow-comparison {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .notification-item {
+    flex-direction: column;
+    gap: 13px;
+    padding: 18px;
+  }
+  .workflow-actions > .btn {
+    white-space: normal;
+  }
+  .notification-shortcut {
+    width: 30px;
+    height: 30px;
+  }
+}
+.roster-template-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 14px;
+}
+.roster-preview {
+  max-height: 360px;
+  overflow: auto;
+  margin-top: 16px;
+}
+.roster-history article {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.roster-history article:last-child {
+  border-bottom: none;
+}
+.roster-history p {
+  margin: 8px 0 0;
+  line-height: 1.8;
+}
+.assignment-table td,
+.roster-table td {
+  vertical-align: top;
+}
+.nav-item[hidden] {
+  display: none;
 }
 .regulation-page figcaption {
   text-align: center;

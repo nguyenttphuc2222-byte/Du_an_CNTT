@@ -122,6 +122,7 @@ export function createAuth({ store, config }) {
         ? store.getDemoUsers().map((user) => publicUser({ ...user, provider: 'demo' }))
         : [],
       settings: store.getSettings(),
+      access: user ? store.access(user) : null,
     };
   }
   function sessionData(req) {
@@ -384,14 +385,20 @@ export function createAuth({ store, config }) {
     const driveRoute =
       url.hostname === 'www.googleapis.com' &&
       /^\/(?:upload\/)?drive\/v3\/files(?:\/[A-Za-z0-9_-]+(?:\/permissions)?)?$/.test(url.pathname);
+    const permissionDeleteRoute =
+      url.hostname === 'www.googleapis.com' &&
+      /^\/drive\/v3\/files\/[A-Za-z0-9_-]+\/permissions\/[A-Za-z0-9_-]+$/.test(url.pathname);
+    const supportedRequest =
+      method === 'DELETE'
+        ? permissionDeleteRoute
+        : ['GET', 'POST', 'PUT'].includes(method) && (sheetRoute || driveRoute);
     if (
       url.protocol !== 'https:' ||
       url.username ||
       url.password ||
       url.port ||
       url.hash ||
-      (!sheetRoute && !driveRoute) ||
-      !['GET', 'POST', 'PUT'].includes(method)
+      !supportedRequest
     )
       throw fail(400, 'Yêu cầu Google API nằm ngoài phạm vi hỗ trợ.');
     try {

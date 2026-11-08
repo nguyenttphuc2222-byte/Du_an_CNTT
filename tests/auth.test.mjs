@@ -32,6 +32,12 @@ function fixture(overrides = {}) {
     ],
   ]);
   const store = {
+    access: (user) => ({
+      isCoordinator: false,
+      scope: user.role === 'STUDENT' ? 'self' : 'assigned',
+      canManageRoster: false,
+      canManageSemesters: false,
+    }),
     getSettings: () => ({ verified: false }),
     getUser: (id) => users.get(id) ?? null,
     getDemoUsers: () => [users.get('demo-lecturer'), users.get('demo-student')],
@@ -536,6 +542,26 @@ for (const authAudience of ['internal', 'external']) {
       'Content-Type': 'multipart/related; boundary=test',
     });
     assert.equal(requestOptions.maxRedirects, 0);
+    const permissionUrl =
+      'https://www.googleapis.com/drive/v3/files/abcdefghijk/permissions/new_permission_1';
+    assert.equal(
+      (await auth.googleRequest(request(googleCookie), permissionUrl, { method: 'DELETE' }))
+        .received,
+      permissionUrl,
+    );
+    for (const url of [
+      'https://www.googleapis.com/drive/v3/files/abcdefghijk',
+      'https://www.googleapis.com/drive/v3/files/abcdefghijk/permissions',
+      'https://sheets.googleapis.com/v4/spreadsheets/abcdefghijk',
+    ])
+      await assert.rejects(
+        () => auth.googleRequest(request(googleCookie), url, { method: 'DELETE' }),
+        { status: 400 },
+      );
+    await assert.rejects(
+      () => auth.googleRequest(request(googleCookie), permissionUrl, { method: 'POST' }),
+      { status: 400 },
+    );
     const demoRes = response();
     const snapshot = auth.demoLogin(request(), demoRes, { userId: 'demo-student' });
     const demoCookie = cookieFrom(demoRes, 'tdtu_conduct_session');

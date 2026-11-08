@@ -2,6 +2,12 @@
 
 # Ứng dụng demo quản lý điểm rèn luyện TDTU
 
+Quản lý năm học, học kỳ, thời hạn và chốt/mở lại: xem [hướng dẫn học kỳ và kiểm thử](docs/QUAN_LY_HOC_KY.md). Danh mục được cấu hình trên giao diện, dùng chung cho nhập liệu và báo cáo; mỗi lần chốt lưu một phiên bản riêng.
+
+Đã bổ sung [danh sách và phân công theo học kỳ](docs/DANH_SACH_VA_PHAN_CONG.md). Điều phối viên được cấu hình riêng bằng `COORDINATOR_EMAILS`; giảng viên thông thường chỉ quản lý lớp được giao. Kỳ mới cần nhập hoặc sao chép danh sách rõ ràng, không tự mang theo điểm hoặc phân công.
+
+Đã bổ sung [phúc tra điều chỉnh minh chứng và thông báo](docs/PHUC_TRA_MINH_CHUNG_THONG_BAO.md): yêu cầu theo từng khoản, điều chỉnh có căn cứ và lịch sử trước/sau, khoản thay thế không cộng cùng khoản gốc, trạng thái minh chứng cùng đồng bộ quyền do ứng dụng quản lý, thông báo tiến độ/nhắc hạn trong ứng dụng. Kỳ chốt vẫn chặn thay đổi kết quả cho đến khi được mở lại hợp lệ.
+
 Bản demo chạy trên máy bằng Node.js hoặc Docker, có giao diện tiếng Việt cho sinh viên và giảng viên, lưu dữ liệu SQLite và kết nối Google OAuth Internal, Google Sheets, Google Drive. Dữ liệu tên, hoạt động và điểm ban đầu là minh họa; hai email demo được cấu hình theo yêu cầu.
 
 ## Chạy nhanh bằng Docker
@@ -35,8 +41,6 @@ Mở **http://localhost:3000**. Dùng `npm.cmd` nếu PowerShell chặn `npm.ps1
 Chỉ chạy một phiên Node hoặc Docker trên cổng 3000. Muốn chạy Node ở cổng khác, đặt đồng thời `PORT` và `BASE_URL` trong `.env`, rồi cập nhật redirect URI tương ứng của Google.
 
 ## Tài khoản và phân quyền
-523h0080@student.tdtu.edu.vn - phuc123456@
-523h0025@student.tdtu.edu.vn - KTPM523CaoHau
 
 | Email                          | Vai trò trong ứng dụng                                                     |
 | ------------------------------ | -------------------------------------------------------------------------- |

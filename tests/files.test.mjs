@@ -152,3 +152,69 @@ test('report export retains annual average, missing status and six category labe
   assert.equal(book.worksheets.length, 3);
   assert.ok(book.getWorksheet('Thong tin').getColumn(2).values.join(' ').includes('2025–2026'));
 });
+
+test('closed report export preserves version and time without publishing a missing or partial result as zero', async () => {
+  const { reportRows, makeReportWorkbook } = await import('../src/files.mjs');
+  const base = {
+    code: 'DEMO',
+    name: 'Hồ sơ kiểm thử',
+    className: 'Lớp mẫu',
+    semester: 'configured-term',
+    snapshotId: 'snapshot-1',
+    snapshotVersion: 1,
+    closedAt: '2026-11-06T00:00:00.000Z',
+    pendingTotal: 0,
+    projectedTotal: null,
+    projectedClassification: null,
+    categoryScores: [{ name: 'Học tập', official: 0, projected: 0 }],
+  };
+  const report = {
+    students: [
+      {
+        ...base,
+        evaluationStatus: 'no_data',
+        hasOfficialData: false,
+        officialTotal: 0,
+        publishedTotal: null,
+      },
+      {
+        ...base,
+        evaluationStatus: 'incomplete',
+        hasOfficialData: true,
+        officialTotal: 8,
+        publishedTotal: null,
+        officialClassification: 'Kém',
+      },
+      {
+        ...base,
+        evaluationStatus: 'evaluated',
+        hasOfficialData: true,
+        officialTotal: 0,
+        publishedTotal: 0,
+        officialClassification: 'Kém',
+      },
+    ],
+    basis: 'official',
+    settings: { versionName: 'snapshot-rules' },
+    stats: { total: 3, hasData: 1, noData: 2, byClassification: [] },
+  };
+  const rows = reportRows(report);
+  assert.deepEqual(
+    rows.map((row) => row['Điểm chính thức']),
+    [null, null, 0],
+  );
+  assert.deepEqual(
+    rows.map((row) => row['Học tập - chính thức']),
+    [null, null, 0],
+  );
+  assert.equal(rows[1]['Xếp loại chính thức'], 'Chưa đủ dữ liệu đánh giá');
+  assert.equal(rows[2]['Xếp loại chính thức'], 'Kém');
+  assert.equal(rows[0]['Bản chốt'], 1);
+  assert.equal(rows[0]['Thời điểm chốt'], base.closedAt);
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await makeReportWorkbook(report));
+  const headers = workbook.worksheets[0].getRow(1).values;
+  const column = headers.indexOf('Điểm chính thức');
+  assert.equal(workbook.worksheets[0].getRow(2).getCell(column).value, null);
+  assert.equal(workbook.worksheets[0].getRow(4).getCell(column).value, 0);
+});

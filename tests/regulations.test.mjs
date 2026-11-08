@@ -242,6 +242,18 @@ test('Article 9 includes every award rank and all contribution award levels with
     assert.equal(criterion(`bonus_contribution_${level}`).points, points);
 });
 
+test('annual aggregation uses configured year and term metadata before parsing legacy IDs', () => {
+  const base = { evaluationStatus: 'evaluated', hasOfficialData: true, officialTotal: 60 };
+  const terms = [
+    { ...base, semester: '2030-2031-HK1', academicYear: '2027-2028', term: 1 },
+    { ...base, semester: '2031-2032-HK2', academicYear: '2027-2028', term: 2 },
+  ];
+  assert.equal(annualResult(terms).officialAverage, 60);
+  assert.throws(() => annualResult([terms[0], { ...terms[1], academicYear: '2028-2029' }]));
+  assert.throws(() => annualResult([terms[0], { ...terms[1], term: 1 }]));
+  assert.throws(() => annualResult(terms.map(({ academicYear, term, ...legacy }) => legacy)));
+});
+
 test('GPA conversion respects all lower bounds and adjacent values without rounding', () => {
   for (const [grade, expected] of [
     [0, 0],

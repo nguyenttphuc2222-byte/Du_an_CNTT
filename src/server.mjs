@@ -6,6 +6,7 @@ import { openStore } from './store.mjs';
 import { createAuth } from './auth.mjs';
 import { createGoogleWorkspace } from './google.mjs';
 import { RULE_VERSION, RULE_SOURCE } from './regulations.mjs';
+import { parseRosterUpload, makeRosterWorkbook, ROSTER_COLUMNS } from './roster-files.mjs';
 import {
   parseUpload,
   makeCsv,
@@ -37,6 +38,7 @@ export async function createApp(options = {}) {
     demoEnabled: process.env.DEMO_ENABLED === 'true',
     authAudience: process.env.GOOGLE_AUTH_AUDIENCE ?? 'internal',
     lecturerEmails: list(process.env.LECTURER_EMAILS, '523h0025@student.tdtu.edu.vn'),
+    coordinatorEmails: list(process.env.COORDINATOR_EMAILS, ''),
     allowedDomains: list(process.env.ALLOWED_EMAIL_DOMAINS, 'student.tdtu.edu.vn,tdtu.edu.vn'),
     allowedHostedDomains: list(
       process.env.ALLOWED_HOSTED_DOMAINS,
@@ -53,7 +55,12 @@ export async function createApp(options = {}) {
     options.dbPath ??
     path.join(path.resolve(ROOT, process.env.DATA_DIR || 'data'), 'conduct.sqlite');
   if (dbPath !== ':memory:') await mkdir(path.dirname(dbPath), { recursive: true });
-  const store = openStore({ dbPath });
+  const store = openStore({
+    dbPath,
+    coordinatorEmails: config.coordinatorEmails,
+    demoCoordinator: config.demoEnabled === true,
+    ...(options.clock ? { clock: options.clock } : {}),
+  });
   const auth = createAuth({ store, config });
   const google = createGoogleWorkspace({ auth, store, config });
   const loginAttempts = new Map();
@@ -78,6 +85,12 @@ export async function createApp(options = {}) {
   function lecturer(req) {
     const user = current(req);
     if (user.role !== 'LECTURER') throw error(403, 'Chức năng này dành cho cán bộ/giảng viên.');
+    return user;
+  }
+  function coordinator(req) {
+    const user = lecturer(req);
+    if (!store.access(user).isCoordinator)
+      throw error(403, 'Chức năng này dành cho điều phối viên được cấu hình trên máy chủ.');
     return user;
   }
   function json(res, status, payload) {
@@ -152,6 +165,8 @@ export async function createApp(options = {}) {
         });
       if (method === 'GET' && pathname === '/api/session')
         return json(res, 200, auth.sessionData(req));
+      if (method === 'GET' && pathname === '/api/access')
+        return json(res, 200, store.access(current(req)));
       if (method === 'POST' && pathname === '/api/auth/demo') {
         guardRate(req);
         return json(res, 200, auth.demoLogin(req, res, await body(req)));
@@ -201,6 +216,112 @@ export async function createApp(options = {}) {
       if (method === 'POST' && pathname === '/api/google/evidence') {
         current(req);
         return json(res, 201, await google.uploadEvidence(req, await body(req)));
+      }
+      if (pathname === '/api/appeals') {
+        if (method === 'GET') return json(res, 200, store.appeals(current(req), filters));
+        if (method === 'POST')
+          return json(res, 201, store.createAppeal(current(req), await body(req)));
+      }
+      if (/^\/api\/appeals\/[^/]+(?:\/(?:respond|resolve))?$/.test(pathname)) {
+        const appealId = decodeURIComponent(pathname.split('/')[3]);
+        if (method === 'GET' && pathname.split('/').length === 4)
+          return json(res, 200, store.appeal(current(req), appealId));
+        if (method === 'PATCH' || method === 'POST') {
+          const user = pathname.endsWith('/resolve') ? lecturer(req) : current(req);
+          return json(res, 200, store.updateAppeal(user, appealId, await body(req)));
+        }
+      }
+      if (method === 'GET' && pathname === '/api/notifications')
+        return json(res, 200, store.notifications(current(req), filters));
+      if (method === 'POST' && pathname === '/api/notifications/read-all') {
+        const user = current(req);
+        await body(req);
+        return json(res, 200, store.readAllNotifications(user));
+      }
+      if (
+        ['POST', 'PATCH'].includes(method) &&
+        /^\/api\/notifications\/[^/]+\/read$/.test(pathname)
+      ) {
+        const user = current(req);
+        await body(req);
+        return json(
+          res,
+          200,
+          store.readNotification(user, decodeURIComponent(pathname.split('/')[3])),
+        );
+      }
+      if (method === 'GET' && pathname === '/api/evidence')
+        return json(res, 200, store.evidenceList(current(req), filters));
+      if (/^\/api\/evidence\/[^/]+(?:\/(?:retry|request-share))?$/.test(pathname)) {
+        const evidenceId = decodeURIComponent(pathname.split('/')[3]);
+        if (method === 'GET' && pathname.split('/').length === 4)
+          return json(res, 200, store.evidence(current(req), evidenceId));
+        if (method === 'POST' && pathname.endsWith('/retry')) {
+          current(req);
+          await body(req);
+          return json(res, 200, await google.retryEvidence(req, evidenceId));
+        }
+        if (method === 'POST' && pathname.endsWith('/request-share'))
+          return json(
+            res,
+            200,
+            store.requestEvidenceShare(current(req), evidenceId, await body(req)),
+          );
+      }
+      if (method === 'GET' && pathname === '/api/roster')
+        return json(res, 200, store.roster(current(req), filters));
+      if (method === 'GET' && pathname === '/api/roster/history')
+        return json(res, 200, store.rosterHistory(current(req), filters));
+      if (method === 'GET' && pathname === '/api/lecturers')
+        return json(res, 200, store.lecturers(coordinator(req)));
+      if (method === 'GET' && pathname === '/api/assignments')
+        return json(res, 200, store.assignments(current(req), filters));
+      if (method === 'POST' && pathname === '/api/assignments')
+        return json(res, 201, store.assignLecturer(coordinator(req), await body(req)));
+      if (method === 'POST' && /^\/api\/assignments\/[^/]+\/revoke$/.test(pathname))
+        return json(
+          res,
+          200,
+          store.revokeAssignment(
+            coordinator(req),
+            decodeURIComponent(pathname.split('/')[3]),
+            await body(req),
+          ),
+        );
+      if (method === 'POST' && pathname === '/api/roster/preview') {
+        const user = coordinator(req);
+        return json(res, 200, store.previewRoster(user, await parseRosterUpload(await body(req))));
+      }
+      if (method === 'POST' && pathname === '/api/roster/commit') {
+        const user = coordinator(req);
+        const payload = await body(req);
+        return json(
+          res,
+          200,
+          store.commitRoster(user, {
+            rows: await parseRosterUpload(payload),
+            batchName: payload.batchName || payload.fileName || 'Danh sách sinh viên',
+            reason: payload.reason,
+          }),
+        );
+      }
+      if (method === 'POST' && pathname === '/api/roster/copy')
+        return json(res, 200, store.copyRoster(coordinator(req), await body(req)));
+      if (method === 'GET' && /^\/api\/roster\/template\.(xlsx|csv)$/.test(pathname)) {
+        const user = coordinator(req);
+        return pathname.endsWith('.csv')
+          ? download(
+              res,
+              makeCsv(ROSTER_COLUMNS, []),
+              'mau-danh-sach.csv',
+              'text/csv; charset=utf-8',
+            )
+          : download(
+              res,
+              await makeRosterWorkbook([], store.listSemesters(user).semesters),
+              'mau-danh-sach.xlsx',
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            );
       }
       if (method === 'GET' && /^\/regulations\/page-(0[1-9]|10)\.png$/.test(pathname)) {
         const content = await readFile(
@@ -291,10 +412,37 @@ export async function createApp(options = {}) {
         current(req);
         return json(res, 200, { settings: store.getSettings() });
       }
+      if (pathname === '/api/semesters') {
+        if (method === 'GET') return json(res, 200, store.listSemesters(current(req)));
+        if (method === 'POST')
+          return json(res, 201, store.createSemester(lecturer(req), await body(req)));
+      }
+      if (/^\/api\/semesters\/[^/]+(?:\/transition|\/snapshots(?:\/[^/]+)?)?$/.test(pathname)) {
+        const parts = pathname.split('/').map(decodeURIComponent);
+        const semesterId = parts[3];
+        if (parts.length === 4 && method === 'PATCH')
+          return json(res, 200, store.updateSemester(lecturer(req), semesterId, await body(req)));
+        if (parts[4] === 'transition' && method === 'POST')
+          return json(
+            res,
+            200,
+            store.transitionSemester(lecturer(req), semesterId, await body(req)),
+          );
+        if (parts[4] === 'snapshots' && method === 'GET') {
+          const user = lecturer(req);
+          return json(
+            res,
+            200,
+            parts[5]
+              ? store.semesterSnapshot(user, semesterId, parts[5])
+              : store.semesterSnapshots(user, semesterId),
+          );
+        }
+      }
       if (method === 'PUT' && pathname === '/api/settings')
         return json(res, 200, store.updateSettings(lecturer(req), await body(req)));
       if (method === 'GET' && /^\/api\/import\/template\.(xlsx|csv)$/.test(pathname)) {
-        lecturer(req);
+        const user = lecturer(req);
         if (pathname.endsWith('.csv'))
           return download(
             res,
@@ -304,7 +452,7 @@ export async function createApp(options = {}) {
           );
         return download(
           res,
-          await makeImportWorkbook([]),
+          await makeImportWorkbook([], store.listSemesters(user).semesters),
           'mau-nhap-diem.xlsx',
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         );
@@ -322,7 +470,7 @@ export async function createApp(options = {}) {
           );
         return download(
           res,
-          await makeImportWorkbook(rows),
+          await makeImportWorkbook(rows, store.listSemesters(lecturer(req)).semesters),
           'du-lieu-demo-doi-soat.xlsx',
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         );
@@ -384,12 +532,21 @@ export async function createApp(options = {}) {
   });
   server.requestTimeout = 30000;
   server.headersTimeout = 15000;
+  const notificationTimer = setInterval(() => {
+    try {
+      store.refreshNotifications();
+    } catch (cause) {
+      console.error('[notifications]', cause.message);
+    }
+  }, 60000);
+  notificationTimer.unref();
   return {
     server,
     store,
     auth,
     config,
     close: async () => {
+      clearInterval(notificationTimer);
       auth.close();
       await new Promise((resolve) => server.close(resolve));
       store.close();

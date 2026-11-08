@@ -11,9 +11,12 @@
     "start": "node --env-file-if-exists=.env src/server.mjs",
     "dev": "node --watch --env-file-if-exists=.env src/server.mjs",
     "test": "node --test tests/*.test.mjs",
-    "check": "node --check src/server.mjs && node --check src/files.mjs && node --check src/auth.mjs && node --check src/google.mjs && node --check src/store.mjs && node --check src/regulations.mjs && node --check public/app.js",
+    "check": "node --check src/server.mjs && node --check src/files.mjs && node --check src/roster-files.mjs && node --check src/workflows.mjs && node --check src/auth.mjs && node --check src/google.mjs && node --check src/store.mjs && node --check src/regulations.mjs && node --check public/app.js",
     "test:e2e": "node scripts/browser-check.mjs",
     "test:browser": "node scripts/browser-check.mjs",
+    "test:semesters:browser": "node scripts/semester-browser-check.mjs",
+    "test:roster:browser": "node scripts/roster-browser-check.mjs",
+    "test:workflows:browser": "node scripts/workflow-browser-check.mjs",
     "format": "prettier --write \"src/**/*.mjs\" \"public/**/*.{html,css,js}\" \"tests/**/*.mjs\" \"scripts/**/*.mjs\" \"*.{json,md,yaml}\" \".vscode/*.json\""
   },
   "dependencies": {

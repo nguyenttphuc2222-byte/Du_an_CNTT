@@ -69,13 +69,26 @@ function cell(value) {
   }
   return value ?? '';
 }
-function objectsFromGrid(grid) {
+function objectsFromGrid(grid, schema = {}) {
+  const columns = schema.columns || IMPORT_COLUMNS;
+  const requiredColumns = schema.requiredColumns || [
+    'sourceId',
+    'studentCode',
+    'criterionId',
+    'date',
+    'semester',
+  ];
+  const headerAliases = { ...aliases, ...schema.headerAliases };
   while (grid.length && grid[0].every((v) => String(v ?? '').trim() === '')) grid.shift();
   if (!grid.length) fail('Tệp không có dữ liệu.');
-  const headers = grid.shift().map((v) => aliases[key(v)] ?? String(v ?? '').trim());
-  const known = headers.filter((h) => IMPORT_COLUMNS.includes(h));
+  const headers = grid
+    .shift()
+    .map((v) =>
+      Object.hasOwn(headerAliases, key(v)) ? headerAliases[key(v)] : String(v ?? '').trim(),
+    );
+  const known = headers.filter((h) => columns.includes(h));
   if (new Set(known).size !== known.length) fail('Tệp có cột tiêu đề trùng nhau.');
-  for (const required of ['sourceId', 'studentCode', 'criterionId', 'date', 'semester']) {
+  for (const required of requiredColumns) {
     if (!headers.includes(required))
       fail(`Thiếu cột ${required}. Hãy tải mẫu nhập để dùng đúng cấu trúc.`);
   }
@@ -84,7 +97,7 @@ function objectsFromGrid(grid) {
     .map((row) => {
       const record = {};
       headers.forEach((header, index) => {
-        if (IMPORT_COLUMNS.includes(header)) record[header] = cell(row[index]);
+        if (columns.includes(header)) record[header] = cell(row[index]);
       });
       return record;
     });
@@ -92,7 +105,7 @@ function objectsFromGrid(grid) {
   if (rows.length > LIMIT) fail(`Mỗi lần nhập tối đa ${LIMIT} dòng.`);
   return rows;
 }
-export function parseCsv(text) {
+export function parseCsv(text, schema = {}) {
   text = String(text).replace(/^\uFEFF/, '');
   const firstLine = text.split(/\r?\n/).find((line) => line.trim()) ?? '';
   const delimiter = [',', ';', '\t'].sort(
@@ -126,7 +139,7 @@ export function parseCsv(text) {
     row.push(value);
     grid.push(row);
   }
-  return objectsFromGrid(grid);
+  return objectsFromGrid(grid, schema);
 }
 
 // Check the ZIP before ExcelJS allocates worksheet structures. Keep uploads bounded
@@ -200,18 +213,18 @@ function validateXlsxArchive(buffer) {
   }
 }
 
-export async function parseUpload(payload) {
+export async function parseUpload(payload, schema = {}) {
   if (Array.isArray(payload.rows)) {
     if (!payload.rows.length || payload.rows.length > LIMIT) fail(`Cần từ 1 đến ${LIMIT} dòng.`);
     return payload.rows.map((row) => {
       if (!row || typeof row !== 'object' || Array.isArray(row))
         fail('Dòng nhập phải là đối tượng dữ liệu.');
       const record = {};
-      for (const column of IMPORT_COLUMNS) record[column] = cell(row[column]);
+      for (const column of schema.columns || IMPORT_COLUMNS) record[column] = cell(row[column]);
       return record;
     });
   }
-  if (typeof payload.csv === 'string') return parseCsv(payload.csv);
+  if (typeof payload.csv === 'string') return parseCsv(payload.csv, schema);
   if (typeof payload.fileName !== 'string' || typeof payload.fileBase64 !== 'string')
     fail('Hãy chọn tệp XLSX hoặc CSV.');
   const extension = payload.fileName.toLowerCase().split('.').pop();
@@ -221,7 +234,7 @@ export async function parseUpload(payload) {
   const buffer = Buffer.from(payload.fileBase64, 'base64');
   if (!buffer.length || buffer.length > 8 * 1024 * 1024)
     fail('Tệp rỗng hoặc vượt quá giới hạn 8 MB.');
-  if (extension === 'csv') return parseCsv(buffer.toString('utf8'));
+  if (extension === 'csv') return parseCsv(buffer.toString('utf8'), schema);
   validateXlsxArchive(buffer);
   const workbook = new ExcelJS.Workbook();
   try {
@@ -237,7 +250,7 @@ export async function parseUpload(payload) {
   sheet.eachRow({ includeEmpty: true }, (row) => {
     grid.push(Array.from({ length: sheet.columnCount }, (_, i) => cell(row.getCell(i + 1).value)));
   });
-  return objectsFromGrid(grid);
+  return objectsFromGrid(grid, schema);
 }
 function csvValue(value) {
   if (value === null || value === undefined) return '';
@@ -279,7 +292,7 @@ function addSheet(workbook, name, columns, rows) {
   });
   return sheet;
 }
-export async function makeImportWorkbook(rows = []) {
+export async function makeImportWorkbook(rows = [], semesters = []) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'TDTU Conduct Demo';
   addSheet(workbook, 'Du lieu phat sinh', IMPORT_COLUMNS, rows);
@@ -302,7 +315,7 @@ export async function makeImportWorkbook(rows = []) {
         text: 'criterionId: mã tiêu chí trong trang Quy tắc điểm. categoryId và points có thể để trống để hệ thống tính theo tiêu chí.',
       },
       {
-        text: 'quantity: số lần với tiêu chí /lần; 1 với tiêu chí /học kỳ. Điểm theo văn bản cần points và approvalReference. date: YYYY-MM-DD; semester: 2026-2027-HK1.',
+        text: 'quantity: số lần với tiêu chí /lần; 1 với tiêu chí /học kỳ. Điểm theo văn bản cần points và approvalReference. date: YYYY-MM-DD; semester: mã trong trang Hoc ky. Mỗi dòng tự chỉ định kỳ, có thể nhập nhiều kỳ trong một đợt.',
       },
       {
         text: 'Mục điểm: academic / compliance / movement / community / pioneer / bonus; mỗi mục tối đa 20, tổng tối đa 100.',
@@ -316,7 +329,32 @@ export async function makeImportWorkbook(rows = []) {
       {
         text: 'Một sinh viên vắng tên trong tệp không tự động bị trừ điểm. Điểm danh không mặc nhiên là dữ liệu chính thức.',
       },
+      {
+        text: 'Danh mục là ảnh tại lúc tải mẫu. Máy chủ kiểm tra lại từng dòng khi nhập; một dòng thuộc kỳ đã chốt làm toàn đợt bị từ chối, kể cả kỳ đang chọn trên giao diện còn mở.',
+      },
     ],
+  );
+  addSheet(
+    workbook,
+    'Hoc ky',
+    [
+      { header: 'Mã học kỳ', key: 'id', width: 30 },
+      { header: 'Tên học kỳ', key: 'name', width: 42 },
+      { header: 'Năm học', key: 'academicYear', width: 20 },
+      { header: 'Thứ tự kỳ', key: 'term', width: 15 },
+      { header: 'Trạng thái', key: 'state', width: 20 },
+      { header: 'Bắt đầu kê khai UTC', key: 'startsAt', width: 28 },
+      { header: 'Hạn kê khai UTC', key: 'deadline', width: 28 },
+      { header: 'Tính điểm năm', key: 'annualIncluded', width: 18 },
+      { header: 'Tính toàn khóa', key: 'courseIncluded', width: 18 },
+    ],
+    semesters.map((semester) => ({
+      ...semester,
+      state:
+        { open: 'Mở', review: 'Tổng hợp', closed: 'Đã chốt' }[semester.state] || semester.state,
+      annualIncluded: semester.annualIncluded ? 'Có' : 'Không',
+      courseIncluded: semester.courseIncluded ? 'Có' : 'Không',
+    })),
   );
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
@@ -328,6 +366,8 @@ export function reportRows(report) {
     not_evaluated: 'Không đánh giá',
   };
   return report.students.map((student) => {
+    const officialTotal = student.snapshotId ? student.publishedTotal : student.officialTotal;
+    const hasOfficialResult = student.hasOfficialData && officialTotal !== null;
     const breakdown =
       student.semesterBreakdown ||
       (report.semesterBreakdown || []).map((period) => ({
@@ -339,16 +379,21 @@ export function reportRows(report) {
       'Họ tên': student.name,
       Lớp: student.className,
       'Học kỳ': student.semester,
+      'Bản chốt': student.snapshotVersion ?? report.snapshotVersion ?? null,
+      'Thời điểm chốt': student.closedAt ?? report.closedAt ?? null,
       'Trạng thái đánh giá':
         statusLabels[student.evaluationStatus] ||
         (student.hasOfficialData ? 'Có dữ liệu' : 'Chưa có dữ liệu'),
       'Số khoản cũ cần đối chiếu': student.legacyCount || 0,
       'Lưu ý': (student.warnings || []).join('; '),
       'Có dữ liệu chính thức': student.hasOfficialData ? 'Có' : 'Chưa có',
-      'Điểm chính thức': student.hasOfficialData ? student.officialTotal : null,
+      'Điểm chính thức': hasOfficialResult ? officialTotal : null,
       'Điểm kê khai còn chờ': student.pendingTotal,
       'Điểm dự kiến': student.projectedClassification ? student.projectedTotal : null,
-      'Xếp loại chính thức': student.officialClassification ?? 'Chưa có dữ liệu',
+      'Xếp loại chính thức':
+        student.snapshotId && !hasOfficialResult
+          ? statusLabels[student.evaluationStatus] || 'Chưa đủ dữ liệu đánh giá'
+          : (student.officialClassification ?? 'Chưa có dữ liệu'),
       'Xếp loại dự kiến': student.projectedClassification ?? 'Chưa có dữ liệu',
       ...(student.annualTotal !== undefined
         ? {
@@ -361,15 +406,24 @@ export function reportRows(report) {
             breakdown.flatMap((item) => [
               [
                 `${item.semester} - điểm chính thức`,
-                item.hasOfficialData ? item.officialTotal : null,
+                item.hasOfficialData
+                  ? item.snapshotId
+                    ? item.publishedTotal
+                    : item.officialTotal
+                  : null,
               ],
-              [`${item.semester} - xếp loại`, item.officialClassification || 'Chưa có dữ liệu'],
+              [
+                `${item.semester} - xếp loại`,
+                item.snapshotId && item.publishedTotal === null
+                  ? statusLabels[item.evaluationStatus] || 'Chưa đủ dữ liệu đánh giá'
+                  : item.officialClassification || 'Chưa có dữ liệu',
+              ],
             ]),
           )
         : {}),
       ...Object.fromEntries(
         student.categoryScores.flatMap((category) => [
-          [`${category.name} - chính thức`, student.hasOfficialData ? category.official : null],
+          [`${category.name} - chính thức`, hasOfficialResult ? category.official : null],
           [
             `${category.name} - dự kiến`,
             student.projectedClassification ? category.projected : null,

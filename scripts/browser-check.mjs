@@ -279,11 +279,11 @@ try {
   await course.locator('[name="standardSemesters"]').fill('8');
   await course.locator('[name="earlyGraduation"]').check();
   await course.locator('button[type="submit"]').click();
-  await expect(page.locator('#course-result')).toContainText('Học kỳ 1 · 2025 — 2026');
   const courseResponse = await context.request.get(
     '/api/course/s001?cohortYear=2025&standardSemesters=8&earlyGraduation=true',
   );
   const courseData = await courseResponse.json();
+  await expect(page.locator('#course-result')).toContainText(courseData.result.missingSemesters[0]);
   assert.equal(courseData.result.complete, false);
   assert.equal(courseData.result.graduationEligible, null);
   await page.locator('#modal [data-action="close-modal"]').first().click();
