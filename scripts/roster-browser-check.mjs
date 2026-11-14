@@ -7,7 +7,7 @@ import { createApp } from '../src/server.mjs';
 import { makeCsv } from '../src/files.mjs';
 import { ROSTER_COLUMNS } from '../src/roster-files.mjs';
 
-// Google token exchange and ID verification are MOCKED; no real account/consent is used.
+// Google identity, Workspace consent and Sheets responses are mocked.
 const COORDINATORS = ['nguyenttphuc2005@gmail.com', 'son417502@gmail.com'];
 const TEACHER = 'nguyenttphuc2222@gmail.com';
 const FIRST = '2026-2027-HK1',
@@ -16,10 +16,70 @@ const output = path.resolve('artifacts/roadmap-roster');
 await mkdir(output, { recursive: true });
 const originalGetToken = OAuth2Client.prototype.getToken;
 const originalVerify = OAuth2Client.prototype.verifyIdToken;
-let token, browser, app;
+const originalRequest = OAuth2Client.prototype.request;
+const sheetId = 'roster_browser_sheet_12345';
+const tab = {
+  sheetId: 10,
+  title: 'Danh sách minh họa',
+  index: 0,
+  sheetType: 'GRID',
+  gridProperties: { rowCount: 1000, columnCount: 26 },
+};
+const sheetRow = {
+  sourceId: 'SHEETS-BROWSER-01',
+  studentCode: '0001234',
+  name: 'Sinh viên minh họa',
+  email: '0001234@student.tdtu.edu.vn',
+  classId: 'SHEETS-DEMO',
+  className: 'Lớp minh họa Sheets',
+  faculty: 'CNTT',
+  cohortYear: 2026,
+  semester: NEW,
+  approvalReference: 'DS-MINH-HOA',
+};
+let token,
+  workspace = false,
+  invalidSheet = true,
+  browser,
+  app;
 const errors = [];
-OAuth2Client.prototype.getToken = async () => ({ tokens: { id_token: 'mock-browser-identity' } });
+OAuth2Client.prototype.getToken = async () => ({
+  tokens: {
+    id_token: 'mock-browser-identity',
+    ...(workspace
+      ? {
+          access_token: 'mock-browser-workspace',
+          expiry_date: Date.now() + 3600000,
+          scope:
+            'openid email profile https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets.readonly',
+        }
+      : {}),
+  },
+});
 OAuth2Client.prototype.verifyIdToken = async () => ({ getPayload: () => token });
+OAuth2Client.prototype.request = async ({ url }) => {
+  const request = new URL(url);
+  assert.equal(request.origin, 'https://sheets.googleapis.com');
+  assert.equal(request.pathname, '/v4/spreadsheets/' + sheetId);
+  const data = {
+    properties: { title: 'Danh sách sinh viên minh họa' },
+    sheets: [{ properties: tab }],
+  };
+  if (request.searchParams.has('ranges')) {
+    const row = { ...sheetRow, ...(invalidSheet ? { email: 'email-sai' } : {}) };
+    data.sheets[0].data = [
+      {
+        rowData: [ROSTER_COLUMNS, [], ROSTER_COLUMNS.map((key) => row[key])].map((values) => ({
+          values: values.map((value) => ({
+            formattedValue: String(value),
+            userEnteredValue: { stringValue: String(value) },
+          })),
+        })),
+      },
+    ];
+  }
+  return { data };
+};
 try {
   app = await createApp({
     port: 0,
@@ -39,9 +99,11 @@ try {
     channel: process.env.BROWSER_CHANNEL || 'msedge',
     headless: true,
   });
-  async function login(email) {
-    const context = await browser.newContext({ baseURL, viewport: { width: 1440, height: 1000 } });
-    const response = await context.request.get('/auth/google', { maxRedirects: 0 });
+  async function authenticate(context, email, connect = false) {
+    workspace = connect;
+    const response = await context.request.get(connect ? '/auth/google/connect' : '/auth/google', {
+      maxRedirects: 0,
+    });
     const consent = new URL(response.headers().location);
     token = {
       sub: `browser-mock-${email}`,
@@ -58,7 +120,11 @@ try {
         new URLSearchParams({ code: 'mock-code', state: consent.searchParams.get('state') }),
       { maxRedirects: 0 },
     );
-    assert.equal(callback.headers().location, '/');
+    assert.equal(callback.headers().location, connect ? '/?googleConnected=1' : '/');
+  }
+  async function login(email) {
+    const context = await browser.newContext({ baseURL, viewport: { width: 1440, height: 1000 } });
+    await authenticate(context, email);
     const session = await (await context.request.get('/api/session')).json();
     const page = await context.newPage();
     page.on('pageerror', (error) => errors.push(error.message));
@@ -133,6 +199,7 @@ try {
   await expect(teacher.page.locator('.roster-table tbody tr')).toHaveCount(1);
   await expect(teacher.page.locator('.roster-table')).toContainText('523h0080');
   await expect(teacher.page.locator('[data-action="roster-import"]')).toHaveCount(0);
+  await expect(teacher.page.locator('[data-action="roster-sheets-import"]')).toHaveCount(0);
   await expect(teacher.page.locator('.nav-item[data-view="semesters"]')).toHaveCount(0);
   assert.equal(
     (await teacher.context.request.get(`/api/assessments/s002?semester=${NEW}`)).status(),
@@ -156,6 +223,42 @@ try {
     'CNTT 24A',
   );
   await page.locator('#semester-select').selectOption(NEW);
+  await authenticate(manager.context, COORDINATORS[0], true);
+  await page.reload();
+  const openSheet = page.locator('#content [data-action="roster-sheets-import"]');
+  await expect(openSheet).toBeVisible();
+  async function previewSheet(trigger) {
+    await trigger.click();
+    const form = page.locator('form[data-form="roster-sheets-preview"]');
+    await form.locator('[name="semester"]').selectOption(NEW);
+    await form
+      .locator('[name="url"]')
+      .fill(`https://docs.google.com/spreadsheets/d/${sheetId}/edit#gid=10`);
+    await form.locator('[name="sheetName"]').fill(tab.title);
+    await form.locator('[type="submit"]').click();
+    await expect(page.locator('.roster-preview tbody tr')).toBeVisible();
+  }
+  await previewSheet(openSheet);
+  await expect(page.locator('.roster-preview tbody tr td').first()).toHaveText('3');
+  await expect(page.locator('.roster-preview tbody tr')).toContainText(
+    'Email sinh viên không hợp lệ',
+  );
+  await expect(committing.locator('[type="submit"]')).toBeDisabled();
+  invalidSheet = false;
+  await previewSheet(page.locator('#modal [data-recheck]'));
+  await expect(page.locator('.roster-sheet-source')).toContainText(tab.title);
+  await expect(page.locator('.roster-preview tbody tr')).toContainText('0001234');
+  await expect(page.locator('.roster-table tbody')).not.toContainText('0001234');
+  await page.locator('#modal').screenshot({ path: path.join(output, 'sheets-roster-preview.png') });
+  await committing.locator('[name="reason"]').fill('Nhập danh sách minh họa từ Google Sheets');
+  await committing.locator('[type="submit"]').click();
+  await expect(committing).toBeHidden();
+  const added = page.locator('.roster-table tbody tr').filter({ hasText: '0001234' });
+  await expect(added).toContainText(sheetRow.className);
+  await added.locator('[data-action="roster-history"]').click();
+  await expect(page.locator('#modal')).toContainText(tab.title);
+  await page.locator('#modal').screenshot({ path: path.join(output, 'sheets-roster-history.png') });
+  await page.locator('#modal [data-action="close-modal"]').first().click();
   await page.locator('.nav-item[data-view="semesters"]').click();
   const semesterRow = page.locator('#content tr').filter({ hasText: NEW });
   await semesterRow.locator('[data-action="semester-transition"][data-transition="close"]').click();
@@ -189,11 +292,12 @@ try {
   await page.screenshot({ path: path.join(output, 'mobile-roster.png'), fullPage: true });
   assert.deepEqual(errors, []);
   console.log(
-    'PASS: both configured coordinators, explicit semester roster copy, CSV transfer, class assignment, lecturer scope, period history, closed-term permission revocation and mobile layout. Google responses MOCKED; real sign-in/consent not verified.',
+    'PASS: roster copy, CSV transfer, Sheets preview with physical line errors, atomic confirmation and provenance, assignment scope, closed-term revocation and mobile layout. Google responses MOCKED.',
   );
 } finally {
   await browser?.close();
   await app?.close();
   OAuth2Client.prototype.getToken = originalGetToken;
   OAuth2Client.prototype.verifyIdToken = originalVerify;
+  OAuth2Client.prototype.request = originalRequest;
 }

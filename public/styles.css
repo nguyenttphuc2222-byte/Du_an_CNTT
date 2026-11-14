@@ -2657,6 +2657,24 @@ input[readonly] {
   overflow: auto;
   margin-top: 16px;
 }
+.roster-sheet-context {
+  margin-bottom: 16px;
+}
+.roster-sheet-context + .detail-scores + .roster-preview table {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.roster-sheet-context + .detail-scores + .roster-preview th,
+.roster-sheet-context + .detail-scores + .roster-preview td {
+  white-space: normal;
+  padding-inline: 10px;
+}
+.roster-sheet-source {
+  overflow-wrap: anywhere;
+}
+.roster-sheet-source a {
+  text-decoration: underline;
+}
 .roster-history article {
   padding: 18px 0;
   border-bottom: 1px solid var(--line);
@@ -2664,6 +2682,9 @@ input[readonly] {
 }
 .roster-history article:last-child {
   border-bottom: none;
+}
+.roster-history article > .sub {
+  display: block;
 }
 .roster-history p {
   margin: 8px 0 0;

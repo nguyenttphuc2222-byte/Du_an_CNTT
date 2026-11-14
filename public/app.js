@@ -982,6 +982,9 @@ function renderRoster(d) {
   const actions =
     (coordinator()
       ? btn('Nhập danh sách', 'roster-import', 'primary', '', 'upload') +
+        (state.session.user.provider === 'google'
+          ? btn('Nhập từ Google Sheets', 'roster-sheets-import', '', '', 'link')
+          : '') +
         btn('Sao chép danh sách', 'roster-copy', '', '', 'file') +
         btn('Phân công giảng viên', 'assignment-new', '', '', 'plus')
       : '') + btn('Lịch sử danh sách', 'roster-history', '', '', 'clock');
@@ -1010,11 +1013,91 @@ function openRosterImport() {
     `<form data-form="roster-preview"><p class="inline-note">Mỗi dòng xác định MSSV, email, lớp và học kỳ. Mã nguồn giữ căn cứ nhập; tệp có thể chứa nhiều kỳ. Có lỗi ở một dòng thì không ghi cả đợt. Không tự hợp nhất hồ sơ hoặc suy ra khóa từ MSSV.</p><div class="roster-template-links"><a class="btn small" href="/api/roster/template.xlsx">${icon('download')}Mẫu Excel</a><a class="btn small" href="/api/roster/template.csv">${icon('download')}Mẫu CSV</a></div><label class="section-gap">Chọn tệp Excel hoặc CSV<input type="file" name="file" accept=".xlsx,.csv" aria-label="Chọn tệp danh sách"></label><label class="section-gap">Hoặc dán dữ liệu CSV<textarea name="csv" rows="6" placeholder="sourceId,studentCode,name,email,classId,className,faculty,cohortYear,semester,approvalReference"></textarea></label>${formActions('Kiểm tra danh sách')}</form>`,
   );
 }
+async function openRosterSheetsImport(trigger) {
+  requireCoordinator();
+  const loadId = state.loadId;
+  const recheck = trigger.hasAttribute('data-recheck');
+  const prefill = recheck ? state.rosterPayload || {} : {};
+  const status = await api('/api/google/status');
+  if (loadId !== state.loadId || !trigger.isConnected || (recheck && !$('#modal').open)) return;
+  state.google = status;
+  state.rosterPreview = null;
+  state.rosterPayload = null;
+  const periods = semesterCatalog().filter((row) => !semesterWriteMessage(row.id));
+  const selected = prefill.semester || state.semester;
+  const options = periods
+    .map(
+      (row) =>
+        `<option value="${e(row.id)}" ${row.id === selected ? 'selected' : ''}>${e(semesterLabel(row.id))}</option>`,
+    )
+    .join('');
+  let content;
+  if (!periods.length) {
+    content = '<p class="inline-note">Cần một học kỳ chưa chốt để nhập danh sách.</p>';
+  } else if (!state.google?.connected) {
+    content = `${googlePanel('roster')}<p class="inline-note">Sau khi kết nối, mở lại Danh sách và phân công để nhập từ Google Sheets.</p>`;
+  } else {
+    content = `<form data-form="roster-sheets-preview">
+      <p class="inline-note">Dùng mẫu danh sách hiện có. Mã học kỳ ở từng dòng phải khớp kỳ nhận đã chọn. Hàng đầu là tiêu đề cột và các ô dữ liệu cần là giá trị trực tiếp.</p>
+      <div class="roster-template-links"><a class="btn small" href="/api/roster/template.csv">${icon('download')}Mẫu CSV để mở bằng Sheets</a></div>
+      <div class="form-grid section-gap">
+        <label class="full">Học kỳ nhận danh sách<select name="semester" required><option value="">Chọn học kỳ</option>${options}</select></label>
+        <label class="full">Liên kết Google Sheets<input name="url" type="url" required maxlength="2048" value="${e(prefill.url || '')}" placeholder="https://docs.google.com/spreadsheets/d/…"></label>
+        <label class="full">Tên trang tính (không bắt buộc)<input name="sheetName" maxlength="100" value="${e(prefill.sheetName || '')}" placeholder="Danh sach sinh vien"><small>Nếu để trống, ứng dụng đọc trang tính trong liên kết hoặc trang dữ liệu đang hiện đầu tiên của tệp.</small></label>
+      </div>
+      ${formActions('Xem trước Google Sheets')}
+    </form>`;
+  }
+  modal('Nhập danh sách từ Google Sheets', content);
+}
+function rosterSheetSourceHtml(source) {
+  if (!source) return '';
+  const url = safeUrl(source.url);
+  const name = e(source.name || 'Google Sheets');
+  const link = url
+    ? `<a href="${e(url)}" target="_blank" rel="noopener noreferrer">${name}</a>`
+    : name;
+  const location = [source.sheetName, source.rowNumber ? `Dòng ${source.rowNumber}` : '']
+    .filter(Boolean)
+    .map(e)
+    .join(' · ');
+  return `<p class="inline-note roster-sheet-source"><strong>Nguồn Google Sheets</strong> ${link}${location ? ` · ${location}` : ''}</p>`;
+}
+function rosterChangeHtml(item) {
+  if (item.change?.kind === 'enroll') return '<span class="sub">Ghi danh mới trong kỳ</span>';
+  if (item.change?.kind !== 'update') return '';
+  const { before } = item.change;
+  const { row } = item;
+  const changes = [];
+  if (before.classId !== row.classId)
+    changes.push(`Lớp ${before.className || before.classId} → ${row.className || row.classId}`);
+  if ((before.faculty || '') !== (row.faculty || ''))
+    changes.push(`Khoa ${before.faculty || 'chưa xác định'} → ${row.faculty || 'chưa xác định'}`);
+  if (before.cohortYear !== row.cohortYear)
+    changes.push(
+      `Khóa ${before.cohortYear ?? 'chưa xác định'} → ${row.cohortYear ?? 'chưa xác định'}`,
+    );
+  return `<span class="sub">${e(changes.join(' · ') || 'Cập nhật căn cứ danh sách')}</span>`;
+}
 function rosterPreviewHtml() {
   const data = state.rosterPreview;
   if (!data) return '';
   const summary = data.summary || {};
-  return `<div class="detail-scores"><div>Hợp lệ<strong>${num(summary.valid)}</strong></div><div>Trùng nguồn<strong>${num(summary.duplicate)}</strong></div><div>Dòng lỗi<strong>${num(summary.errors)}</strong></div></div><div class="table-wrap roster-preview"><table><thead><tr><th>DÒNG</th><th>SINH VIÊN</th><th>LỚP / HỌC KỲ</th><th>KẾT QUẢ KIỂM TRA</th></tr></thead><tbody>${(data.rows || []).map((item) => `<tr><td>${num(item.index)}</td><td>${e(item.row?.studentCode)}<span class="sub">${e(item.row?.name)} · ${e(item.row?.email)}</span></td><td>${e(item.row?.className || item.row?.classId)}<span class="sub">${e(semesterLabel(item.row?.semester))}</span></td><td>${badge(item.status === 'error' ? 'Có lỗi' : item.status === 'duplicate' ? 'Đã nhập' : 'Hợp lệ', item.status === 'error' ? 'red' : item.status === 'duplicate' ? '' : 'green')}<span class="sub">${(item.errors || []).map(e).join('; ')}</span></td></tr>`).join('')}</tbody></table></div><form data-form="roster-commit" class="section-gap"><label>Tên đợt nhập<input name="batchName" maxlength="200" value="${e(state.rosterPayload?.fileName || 'Danh sách học kỳ')}" required></label><label class="section-gap">Lý do và căn cứ cập nhật<textarea name="reason" rows="3" maxlength="2000" required placeholder="Nêu nguồn danh sách và lý do bổ sung hoặc chuyển lớp"></textarea></label><p class="inline-note">Máy chủ kiểm tra lại quyền, khóa kỳ, danh tính và mã nguồn trong lúc ghi. Chuyển lớp chỉ tác động học kỳ ghi trong từng dòng; không thay ID hoặc các khoản điểm.</p><div class="form-error" role="alert"></div><div class="form-actions">${btn('Chọn lại tệp', 'roster-import')}<button class="btn primary" type="submit" ${summary.errors || !data.rows?.length ? 'disabled' : ''}>${icon('check')}Ghi nhận danh sách</button></div></form>`;
+  const sheet = data.source;
+  const batchName = sheet ? sheet.name || 'Danh sách Google Sheets' : state.rosterPayload?.fileName;
+  const back = sheet
+    ? btn('Xem trước lại', 'roster-sheets-import', '', 'data-recheck')
+    : btn('Chọn lại tệp', 'roster-import');
+  const disableCommit = summary.errors || !data.rows?.length || (sheet && !data.previewToken);
+  return `${sheet ? `<div class="roster-sheet-context">${rosterSheetSourceHtml(sheet)}<p class="inline-note"><strong>Học kỳ nhận</strong> ${e(semesterLabel(state.rosterPayload.semester))}</p></div>` : ''}
+    <div class="detail-scores"><div>Hợp lệ<strong>${num(summary.valid)}</strong></div><div>Trùng nguồn<strong>${num(summary.duplicate)}</strong></div><div>Dòng lỗi<strong>${num(summary.errors)}</strong></div></div>
+    <div class="table-wrap roster-preview"><table><thead><tr><th>DÒNG</th><th>SINH VIÊN</th><th>LỚP / HỌC KỲ</th><th>KẾT QUẢ KIỂM TRA</th></tr></thead><tbody>${(data.rows || []).map((item) => `<tr><td>${num(item.index)}</td><td>${e(item.row?.studentCode)}<span class="sub">${e(item.row?.name)} · ${e(item.row?.email)}</span></td><td>${e(item.row?.className || item.row?.classId)}<span class="sub">${e(semesterLabel(item.row?.semester))}</span></td><td>${badge(item.status === 'error' ? 'Có lỗi' : item.status === 'duplicate' ? 'Đã nhập' : 'Hợp lệ', item.status === 'error' ? 'red' : item.status === 'duplicate' ? '' : 'green')}${rosterChangeHtml(item)}<span class="sub">${(item.errors || []).map(e).join('; ')}</span></td></tr>`).join('')}</tbody></table></div>
+    <form data-form="roster-commit" class="section-gap">
+      <label>Tên đợt nhập<input name="batchName" maxlength="200" value="${e((batchName || 'Danh sách học kỳ').slice(0, 200))}" required></label>
+      <label class="section-gap">Lý do và căn cứ cập nhật<textarea name="reason" rows="3" maxlength="2000" required placeholder="Nêu nguồn danh sách và lý do bổ sung hoặc chuyển lớp"></textarea></label>
+      <p class="inline-note">${sheet ? 'Máy chủ đọc lại trang tính và kiểm tra quyền, khóa kỳ và danh tính. Nếu nguồn hoặc danh sách đích đã thay đổi, hãy xem trước lại.' : 'Máy chủ kiểm tra lại quyền, khóa kỳ, danh tính và mã nguồn trong lúc ghi. Chuyển lớp chỉ tác động học kỳ ghi trong từng dòng và giữ ID cùng các khoản điểm.'}</p>
+      <div class="form-error" role="alert"></div><div class="form-actions">${back}<button class="btn primary" type="submit" ${disableCommit ? 'disabled' : ''}>${icon('check')}Ghi nhận danh sách</button></div>
+    </form>`;
 }
 function openRosterCopy() {
   requireCoordinator();
@@ -1074,7 +1157,7 @@ async function openRosterHistory(studentId) {
   };
   modal(
     'Lịch sử danh sách',
-    `<p class="inline-note">${e(semesterLabel(state.semester))}. Lịch sử giữ người thực hiện, thời điểm, lý do và dữ liệu trước/sau.</p>${data.history?.length ? `<div class="roster-history">${data.history.map((entry) => `<article><strong>${e(entry.action || 'Cập nhật danh sách')}</strong><span class="sub">${dateTime(entry.createdAt)} · ${e(entry.actorName || 'Hệ thống')} · ${e(entry.studentCode || entry.studentId || '')}</span><p>${e(entry.reason || entry.approvalReference || '')}</p><p class="inline-note">Trước: ${e(describe(entry.before, entry.beforeRedacted))}<br>Sau: ${e(describe(entry.after))}</p></article>`).join('')}</div>` : empty('Chưa có lịch sử trong phạm vi này', 'Nhập và chuyển lớp được ghi nhận tại đúng học kỳ.')}<div class="form-actions">${btn('Đóng', 'close-modal')}</div>`,
+    `<p class="inline-note">${e(semesterLabel(state.semester))}. Lịch sử giữ người thực hiện, thời điểm, lý do và dữ liệu trước/sau.</p>${data.history?.length ? `<div class="roster-history">${data.history.map((entry) => `<article><strong>${e({ enroll: 'Ghi danh', update: 'Cập nhật ghi danh' }[entry.action] || entry.action || 'Cập nhật danh sách')}</strong><span class="sub">${dateTime(entry.createdAt)} · ${e(entry.actorName || 'Hệ thống')} · ${e(entry.studentCode || entry.studentId || '')}</span><p>${e(entry.reason || entry.approvalReference || '')}</p>${coordinator() ? rosterSheetSourceHtml(entry.source) : ''}<p class="inline-note">Trước: ${e(describe(entry.before, entry.beforeRedacted))}<br>Sau: ${e(describe(entry.after))}</p></article>`).join('')}</div>` : empty('Chưa có lịch sử trong phạm vi này', 'Nhập và chuyển lớp được ghi nhận tại đúng học kỳ.')}<div class="form-actions">${btn('Đóng', 'close-modal')}</div>`,
   );
 }
 
@@ -1708,6 +1791,11 @@ document.addEventListener('click', async (event) => {
       openRosterImport();
       return;
     }
+    if (a === 'roster-sheets-import') {
+      b.disabled = true;
+      await openRosterSheetsImport(b);
+      return;
+    }
     if (a === 'roster-copy') {
       openRosterCopy();
       return;
@@ -1941,21 +2029,53 @@ document.addEventListener('submit', async (event) => {
       else throw Error('Hãy chọn tệp Excel/CSV hoặc dán nội dung CSV.');
       state.rosterPreview = await api('/api/roster/preview', state.rosterPayload);
       modal('Kiểm tra danh sách trước khi ghi', rosterPreviewHtml());
+    } else if (action === 'roster-sheets-preview') {
+      requireCoordinator();
+      const message = semesterWriteMessage(values.semester);
+      if (message) throw Error(message);
+      const payload = {
+        url: values.url.trim(),
+        sheetName: values.sheetName.trim(),
+        semester: values.semester,
+      };
+      const preview = await api('/api/roster/sheets/preview', payload);
+      const dialog = $('#modal');
+      if (!dialog.open || !dialog.contains(form)) return;
+      state.rosterPayload = payload;
+      state.rosterPreview = preview;
+      modal('Kiểm tra danh sách trước khi ghi', rosterPreviewHtml());
     } else if (action === 'roster-commit') {
       requireCoordinator();
-      if (!state.rosterPreview || !state.rosterPayload)
-        throw Error('Hãy kiểm tra danh sách trước khi ghi.');
-      const result = await api('/api/roster/commit', {
-        ...state.rosterPayload,
+      const preview = state.rosterPreview;
+      const payload = state.rosterPayload;
+      if (!preview || !payload) throw Error('Hãy kiểm tra danh sách trước khi ghi.');
+      const sheet = preview.source;
+      if (preview.summary?.errors || !preview.rows?.length || (sheet && !preview.previewToken))
+        throw Error('Hãy sửa các dòng lỗi và kiểm tra lại danh sách trước khi ghi.');
+      const loadId = state.loadId;
+      const result = await api(sheet ? '/api/roster/sheets/commit' : '/api/roster/commit', {
+        ...payload,
+        ...(sheet ? { previewToken: preview.previewToken } : {}),
         batchName: values.batchName,
         reason: values.reason,
       });
-      state.rosterPreview = null;
-      state.rosterPayload = null;
-      $('#modal').close();
+      if (state.rosterPayload === payload) {
+        state.rosterPreview = null;
+        state.rosterPayload = null;
+      }
+      const dialog = $('#modal');
+      if (dialog.open && dialog.contains(form)) dialog.close();
       toast(
         `Đã ghi danh sách: ${num(result.inserted)} hồ sơ mới, ${num(result.updated)} cập nhật, ${num(result.skipped)} dòng trùng được bỏ qua.`,
       );
+      if (loadId !== state.loadId || !state.session?.user) return;
+      if (sheet) {
+        state.semester = payload.semester;
+        delete state.filters.roster;
+        try {
+          localStorage.setItem('conduct.semester', state.semester);
+        } catch {}
+      }
       await navigate('roster');
     } else if (action === 'roster-copy') {
       requireCoordinator();

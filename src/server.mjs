@@ -292,6 +292,14 @@ export async function createApp(options = {}) {
         const user = coordinator(req);
         return json(res, 200, store.previewRoster(user, await parseRosterUpload(await body(req))));
       }
+      if (method === 'POST' && pathname === '/api/roster/sheets/preview') {
+        coordinator(req);
+        return json(res, 200, await google.previewRosterSheet(req, await body(req)));
+      }
+      if (method === 'POST' && pathname === '/api/roster/sheets/commit') {
+        coordinator(req);
+        return json(res, 200, await google.commitRosterSheet(req, await body(req)));
+      }
       if (method === 'POST' && pathname === '/api/roster/commit') {
         const user = coordinator(req);
         const payload = await body(req);

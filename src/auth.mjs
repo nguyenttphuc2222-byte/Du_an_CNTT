@@ -369,7 +369,11 @@ export function createAuth({ store, config }) {
       return fail(404, 'Không tìm thấy tệp Google hoặc tài khoản chưa được cấp quyền truy cập.');
     return fail(502, 'Không thể thực hiện yêu cầu Google Workspace. Vui lòng thử lại.');
   }
-  async function googleRequest(req, apiUrl, { method = 'GET', body, headers = {} } = {}) {
+  async function googleRequest(
+    req,
+    apiUrl,
+    { method = 'GET', body, headers = {}, maxContentLength } = {},
+  ) {
     const { grant, sub } = requireGrant(req);
     let url;
     try {
@@ -410,6 +414,7 @@ export function createAuth({ store, config }) {
           Object.entries(headers).filter(([name]) => name.toLowerCase() === 'content-type'),
         ),
         responseType: 'json',
+        ...(maxContentLength === undefined ? {} : { maxContentLength }),
         timeout: 20000,
         maxRedirects: 0,
       });

@@ -1708,15 +1708,17 @@ export function openStore({
           lecturerEmail: one('SELECT email FROM users WHERE id=?', row.lecturerId)?.email || '',
         }
       : null;
-  const inspectRoster = (rows) => {
+  const inspectRoster = (rows, { semester, sheetRows } = {}) => {
     if (!Array.isArray(rows) || rows.length === 0 || rows.length > 5000)
       fail('Danh sách cần từ 1 đến 5.000 dòng.');
+    if (semester !== undefined) assertWritable(semester);
     const seenSources = new Map(),
       seenStudents = new Map(),
       seenEmails = new Map(),
       seenClasses = new Map(),
       seenMemberships = new Set();
     const entries = rows.map((input, index) => {
+      const line = sheetRows?.[index] ?? index + 1;
       try {
         if (!input || typeof input !== 'object' || Array.isArray(input))
           fail('Dòng danh sách không hợp lệ.');
@@ -1745,6 +1747,8 @@ export function openStore({
           fail(
             'Năm tuyển sinh phải là số nguyên từ 1900 đến 2200 hoặc để trống nếu chưa xác định.',
           );
+        if (semester !== undefined && row.semester !== semester)
+          fail(`Học kỳ của dòng không khớp kỳ đã chọn (${semester}).`);
         readSemester(row);
         assertWritable(row.semester);
         const byCode = one('SELECT * FROM students WHERE code=?', row.studentCode);
@@ -1791,15 +1795,18 @@ export function openStore({
         seenStudents.set(row.studentCode, row);
         seenEmails.set(row.email, row.studentCode);
         seenClasses.set(row.classId, row.className);
+        const showChange = semester !== undefined && status === 'valid';
+        const before = showChange && byCode ? enrollmentFor(byCode.id, semester) : null;
         return {
-          index: index + 1,
+          index: line,
           row,
           status,
           errors: [],
           normalized: { row, canonical, studentId: byCode?.id || null },
+          ...(showChange ? { change: { kind: before ? 'update' : 'enroll', before } } : {}),
         };
       } catch (error) {
-        return { index: index + 1, row: input, status: 'error', errors: [error.message] };
+        return { index: line, row: input, status: 'error', errors: [error.message] };
       }
     });
     return {
@@ -1811,9 +1818,22 @@ export function openStore({
       },
     };
   };
-  const writeRoster = (actor, { rows, batchName, reason }) => {
+  const rosterPreview = ({ entries, summary }) => ({
+    rows: entries.map(({ normalized, ...entry }) => entry),
+    summary,
+  });
+  const writeRoster = (
+    actor,
+    { rows, batchName, reason, semester, sheetRows, source, expectedPreview },
+  ) => {
     const justification = required(reason, 'lý do nhập hoặc điều chỉnh danh sách', 2000);
-    const { entries, summary } = inspectRoster(rows);
+    const inspection = inspectRoster(rows, { semester, sheetRows });
+    const { entries, summary } = inspection;
+    if (
+      expectedPreview &&
+      JSON.stringify(expectedPreview) !== JSON.stringify(rosterPreview(inspection))
+    )
+      fail('Danh sách trong học kỳ đã thay đổi. Hãy xem trước lại trước khi ghi.', 409);
     if (summary.errors)
       fail(
         `Không nhập danh sách: ${summary.errors} dòng lỗi. ${entries.find((row) => row.status === 'error').errors[0]}`,
@@ -1869,6 +1889,7 @@ export function openStore({
         id: makeId('enrollment-history'),
         action: before ? 'update' : 'enroll',
         studentId,
+        studentCode: row.studentCode,
         semester: row.semester,
         actorId: actor.id,
         actorName: actor.name,
@@ -1877,6 +1898,7 @@ export function openStore({
         batchId,
         before,
         after,
+        ...(source ? { source: { ...source, rowNumber: entry.index } } : {}),
       };
       run(
         'INSERT INTO enrollment_history(id,studentId,semester,payload) VALUES(?,?,?,?)',
@@ -1913,6 +1935,7 @@ export function openStore({
         inserted,
         updated,
         skipped: summary.duplicate,
+        ...(source ? { source, semester } : {}),
       }),
     );
     return { inserted, updated, skipped: summary.duplicate, batchId };
@@ -2069,10 +2092,9 @@ export function openStore({
         return { assignment };
       });
     },
-    previewRoster(user, rows) {
+    previewRoster(user, rows, options) {
       coordinator(user);
-      const { entries, summary } = inspectRoster(rows);
-      return { rows: entries.map(({ normalized, ...entry }) => entry), summary };
+      return rosterPreview(inspectRoster(rows, options));
     },
     commitRoster(user, payload = {}) {
       const actor = coordinator(user);
@@ -2148,7 +2170,12 @@ export function openStore({
           !assignedClass(actor, event.before.classId, semester)
             ? { ...event, before: null, beforeRedacted: true }
             : event,
-        );
+        )
+        .map((event) => {
+          if (!event.source || isCoordinator(actor)) return event;
+          const { source, ...visible } = event;
+          return visible;
+        });
       return { history, semester };
     },
     evidenceRecipients(user, payload = {}) {

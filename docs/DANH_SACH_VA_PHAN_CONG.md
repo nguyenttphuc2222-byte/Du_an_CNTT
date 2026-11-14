@@ -54,6 +54,16 @@ Giữ nguyên `sourceId` khi nhập lại cùng dữ liệu: hệ thống bỏ q
 
 Tệp có thể chứa nhiều kỳ. Xem trước kiểm tra từng dòng, sau đó máy chủ kiểm tra lại trong transaction khi ghi. Một dòng xung đột hoặc thuộc kỳ chốt khiến toàn bộ đợt bị từ chối, kể cả các dòng hợp lệ thuộc kỳ khác. Không nhận công thức Excel; dùng chung giới hạn tệp và kiểm tra ZIP với bộ nhập điểm hiện có.
 
+## Nhập trực tiếp từ Google Sheets
+
+Điều phối viên đăng nhập bằng Google, kết nối Workspace và mở **Danh sách và phân công → Nhập từ Google Sheets**. Tài khoản cần quyền đọc tệp. Dùng hàng tiêu đề của mẫu danh sách ở dòng 1 và định dạng các cột mã dưới dạng văn bản. Chọn một học kỳ chưa chốt, dán liên kết và điền tên trang tính nếu muốn chọn một trang cụ thể. Tên trang tính được ưu tiên, sau đó đến mã trang trong liên kết. Nếu không có cả hai, hệ thống đọc trang đầu tiên.
+
+Mã học kỳ trên mọi dòng phải khớp kỳ đã chọn. Xem trước hiện số dòng thực tế trên trang tính, lỗi định danh và thông tin ghi danh mới hoặc thay đổi dự kiến. Trang tính chứa công thức không được nhập. Nếu có dòng lỗi, sửa nguồn và xem trước lại trước khi xác nhận.
+
+Khi xác nhận, máy chủ đọc lại trang tính, kiểm tra danh sách đích, quyền và khóa kỳ. Nếu nguồn hoặc dữ liệu liên quan thay đổi sau lúc xem trước, thực hiện lại bước xem trước. Hệ thống chỉ ghi khi cả đợt hợp lệ. Lịch sử của điều phối viên lưu liên kết nguồn, trang tính và số dòng cùng mã nguồn và lý do đã nhập.
+
+API dành cho điều phối viên gồm `POST /api/roster/sheets/preview` và `POST /api/roster/sheets/commit`. Kiểm thử dùng tài khoản và phản hồi Google mô phỏng. Để thử với Google thật, dùng một bảng minh họa đã cấp quyền đọc cho tài khoản điều phối.
+
 ## Phân công và khóa học kỳ
 
 Phân công có giảng viên, lớp, kỳ, người thực hiện, thời điểm và lý do. Thu hồi giữ phân công cũ cùng thời điểm/người thu hồi và lý do. Phân công mới sau thu hồi tạo bản ghi riêng, không tái sử dụng lịch sử cũ. Không cho giảng viên tự cấp lớp cho mình.
@@ -99,4 +109,4 @@ Kết quả ngày **8/11/2026**: kiểm tra cú pháp đạt; **174/174 ca** ngh
 
 API mới: `GET /api/access`, `GET /api/roster`, `GET /api/roster/history`, `POST /api/roster/preview`, `POST /api/roster/commit`, `POST /api/roster/copy`, `GET /api/roster/template.xlsx` hoặc `.csv`, `GET /api/lecturers`, `GET/POST /api/assignments`, `POST /api/assignments/:id/revoke`. Các thao tác ghi roster/phân công đều được kiểm tra quyền thực tế ở store, ngoài kiểm tra ở HTTP.
 
-Chưa có hợp nhất/chỉnh danh tính có xung đột; nhập roster Google Sheets trực tiếp; phân công theo khoa hoặc kế thừa phân công tự động; phúc tra/điều chỉnh thay thế khoản; hệ thống thông báo; nghiệm thu Google thật; CI được chạy trên GitHub hoặc thử tải lớp thực tế. Các phần này thuộc đợt tiếp theo, không suy ra là đã có từ tài liệu lộ trình.
+Các bước phát triển tiếp theo gồm quy trình xử lý xung đột danh tính, nghiệm thu Google thật, chạy CI trên GitHub và thử tải với lớp thực tế. Phúc tra, điều chỉnh, minh chứng và thông báo được mô tả trong [hướng dẫn riêng](PHUC_TRA_MINH_CHUNG_THONG_BAO.md).

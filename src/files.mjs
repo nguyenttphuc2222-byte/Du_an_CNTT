@@ -69,7 +69,7 @@ function cell(value) {
   }
   return value ?? '';
 }
-function objectsFromGrid(grid, schema = {}) {
+export function objectsFromGrid(grid, schema = {}, { withRowNumbers = false } = {}) {
   const columns = schema.columns || IMPORT_COLUMNS;
   const requiredColumns = schema.requiredColumns || [
     'sourceId',
@@ -79,31 +79,33 @@ function objectsFromGrid(grid, schema = {}) {
     'semester',
   ];
   const headerAliases = { ...aliases, ...schema.headerAliases };
-  while (grid.length && grid[0].every((v) => String(v ?? '').trim() === '')) grid.shift();
-  if (!grid.length) fail('Tệp không có dữ liệu.');
-  const headers = grid
-    .shift()
-    .map((v) =>
-      Object.hasOwn(headerAliases, key(v)) ? headerAliases[key(v)] : String(v ?? '').trim(),
-    );
+  const hasData = (row) => row.some((v) => String(v ?? '').trim() !== '');
+  const headerIndex = grid.findIndex(hasData);
+  if (headerIndex === -1) fail('Tệp không có dữ liệu.');
+  const headers = grid[headerIndex].map((v) =>
+    Object.hasOwn(headerAliases, key(v)) ? headerAliases[key(v)] : String(v ?? '').trim(),
+  );
   const known = headers.filter((h) => columns.includes(h));
   if (new Set(known).size !== known.length) fail('Tệp có cột tiêu đề trùng nhau.');
   for (const required of requiredColumns) {
     if (!headers.includes(required))
       fail(`Thiếu cột ${required}. Hãy tải mẫu nhập để dùng đúng cấu trúc.`);
   }
-  const rows = grid
-    .filter((row) => row.some((v) => String(v ?? '').trim() !== ''))
-    .map((row) => {
-      const record = {};
-      headers.forEach((header, index) => {
-        if (columns.includes(header)) record[header] = cell(row[index]);
-      });
-      return record;
+  const rows = [],
+    sheetRows = [];
+  for (let index = headerIndex + 1; index < grid.length; index++) {
+    const row = grid[index];
+    if (!hasData(row)) continue;
+    const record = {};
+    headers.forEach((header, column) => {
+      if (columns.includes(header)) record[header] = cell(row[column]);
     });
+    rows.push(record);
+    if (withRowNumbers) sheetRows.push(index + 1);
+  }
   if (!rows.length) fail('Tệp chỉ có tiêu đề, chưa có dòng dữ liệu.');
   if (rows.length > LIMIT) fail(`Mỗi lần nhập tối đa ${LIMIT} dòng.`);
-  return rows;
+  return withRowNumbers ? { rows, sheetRows } : rows;
 }
 export function parseCsv(text, schema = {}) {
   text = String(text).replace(/^\uFEFF/, '');

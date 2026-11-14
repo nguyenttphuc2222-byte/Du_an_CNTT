@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import { parseUpload } from './files.mjs';
+import { objectsFromGrid, parseUpload } from './files.mjs';
 
 export const ROSTER_COLUMNS = [
   'sourceId',
@@ -58,6 +58,10 @@ const ROSTER_SCHEMA = {
 // validated together by the store before a complete batch is committed.
 export async function parseRosterUpload(payload) {
   return parseUpload(payload, ROSTER_SCHEMA);
+}
+
+export function parseRosterGrid(grid) {
+  return objectsFromGrid(grid, ROSTER_SCHEMA, { withRowNumbers: true });
 }
 
 function addTable(workbook, name, columns, rows) {

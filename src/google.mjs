@@ -1,8 +1,13 @@
-import { randomBytes, createHash } from 'node:crypto';
+import { randomBytes, createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { parseCsv, reportRows } from './files.mjs';
+import { parseRosterGrid } from './roster-files.mjs';
 
 const SHEETS = 'https://sheets.googleapis.com/v4/spreadsheets';
 const DRIVE = 'https://www.googleapis.com/drive/v3/files';
+const ROSTER_PREVIEW_TTL = 15 * 60 * 1000;
+const ROSTER_SHEET_MAX_BYTES = 8 * 1024 * 1024;
+const ROSTER_SHEET_MAX_ROWS = 5001; // Header and up to 5,000 records.
+const ROSTER_SHEET_MAX_COLUMNS = 40;
 function fail(status, message) {
   return Object.assign(new Error(message), { status });
 }
@@ -42,7 +47,71 @@ function gridCsv(grid) {
     .join('\r\n');
 }
 
+function rosterSheetSelection(payload) {
+  const id = sheetId(payload);
+  const sheetName = typeof payload.sheetName === 'string' ? payload.sheetName : '';
+  if (sheetName.length > 100) throw fail(400, 'Tên trang tính vượt quá 100 ký tự.');
+  const link = payload.spreadsheetId || payload.url || payload.spreadsheetUrl;
+  if (sheetName.trim() || !/^https:/i.test(link.trim()))
+    return { id, sheetName: sheetName.trim() ? sheetName : '' };
+  const url = new URL(link.trim());
+  const queryGid = url.searchParams.get('gid');
+  const fragmentGid = new URLSearchParams(url.hash.slice(1)).get('gid');
+  const gid = fragmentGid ?? queryGid;
+  if (gid === null) return { id };
+  if (
+    !/^\d{1,10}$/.test(gid) ||
+    Number(gid) > 2147483647 ||
+    (queryGid !== null && fragmentGid !== null && queryGid !== fragmentGid)
+  )
+    throw fail(400, 'Mã trang tính trong liên kết Google Sheets không hợp lệ.');
+  return { id, gid: Number(gid) };
+}
+
+function rosterGridFromSheet(sheet) {
+  const grid = [];
+  for (const block of sheet.data || []) {
+    const startRow = block.startRow ?? 0;
+    const startColumn = block.startColumn ?? 0;
+    for (const [rowOffset, row] of (block.rowData || []).entries()) {
+      const rowIndex = startRow + rowOffset;
+      for (const [columnOffset, cell] of (row.values || []).entries()) {
+        const entered = cell.userEnteredValue || {};
+        const columnIndex = startColumn + columnOffset;
+        if (Object.hasOwn(entered, 'formulaValue'))
+          throw fail(
+            400,
+            `Dòng ${rowIndex + 1}, cột ${columnIndex + 1} có công thức. Hãy dán dưới dạng giá trị.`,
+          );
+        const value =
+          cell.formattedValue ?? entered.stringValue ?? entered.numberValue ?? entered.boolValue;
+        if (value === undefined || String(value).trim() === '') continue;
+        if (rowIndex >= ROSTER_SHEET_MAX_ROWS || columnIndex >= ROSTER_SHEET_MAX_COLUMNS)
+          throw fail(
+            400,
+            `Dòng ${rowIndex + 1}, cột ${columnIndex + 1} vượt phạm vi nhập. Hãy để tiêu đề và tối đa 5.000 dòng dữ liệu trong 5.001 dòng đầu và 40 cột đầu.`,
+          );
+        grid[rowIndex] ??= [];
+        grid[rowIndex][columnIndex] = value;
+      }
+    }
+  }
+  return Array.from(grid, (row) => row || []);
+}
+
+function staleRosterPreview() {
+  return fail(409, 'Bản xem trước đã hết hạn hoặc dữ liệu đã thay đổi. Hãy xem trước lại.');
+}
+
 export function createGoogleWorkspace({ auth, store, config = {} }) {
+  // Like the session and Workspace grant, the signed preview is scoped to this server run.
+  const rosterPreviewKey = randomBytes(32);
+  const signRosterPreview = (encoded) =>
+    createHmac('sha256', rosterPreviewKey).update(encoded).digest('base64url');
+  const rosterDigest = (loaded, preview) =>
+    createHash('sha256')
+      .update(JSON.stringify([loaded, preview]))
+      .digest('base64url');
   function userFor(req) {
     const user = auth.getUser(req);
     if (!user) throw fail(401, 'Vui lòng đăng nhập.');
@@ -117,6 +186,135 @@ export function createGoogleWorkspace({ auth, store, config = {} }) {
         url: sheetUrl(id),
       },
     };
+  }
+  function rosterCoordinator(req) {
+    const user = lecturerFor(req);
+    if (!store.access(user).isCoordinator)
+      throw fail(403, 'Chức năng này dành cho điều phối viên được cấu hình trên máy chủ.');
+    return user;
+  }
+  function rosterSemester(user, payload) {
+    const semester = typeof payload.semester === 'string' ? payload.semester.trim() : '';
+    if (!semester || semester.length > 100) throw fail(400, 'Hãy chọn học kỳ nhận danh sách.');
+    const period = store.listSemesters(user).semesters.find((item) => item.id === semester);
+    if (!period) throw fail(400, 'Học kỳ không nằm trong danh mục được cấu hình.');
+    if (period.state === 'closed')
+      throw fail(409, `Học kỳ ${semester} đã chốt và khóa. Cần mở lại trước khi thay đổi.`);
+    return semester;
+  }
+  async function readRosterSheet(req, selection) {
+    const { id, sheetName, gid } = selection;
+    const url = new URL(`${SHEETS}/${id}`);
+    url.searchParams.set(
+      'fields',
+      'properties(title),sheets(properties(sheetId,title,index,hidden,sheetType))',
+    );
+    const options = { maxContentLength: ROSTER_SHEET_MAX_BYTES };
+    const metadata = await auth.googleRequest(req, url.href, options);
+    const tabs = (metadata?.sheets || []).map((item) => item.properties).filter(Boolean);
+    const tab = sheetName
+      ? tabs.find((item) => item.title === sheetName)
+      : gid !== undefined
+        ? tabs.find((item) => item.sheetId === gid)
+        : tabs
+            .filter((item) => !item.hidden && (!item.sheetType || item.sheetType === 'GRID'))
+            .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))[0];
+    if (!tab?.title || !Number.isInteger(tab.sheetId))
+      throw fail(400, 'Không tìm thấy trang tính. Hãy kiểm tra liên kết hoặc tên trang tính.');
+    if (tab.sheetType && tab.sheetType !== 'GRID')
+      throw fail(400, 'Hãy chọn trang tính thông thường có dữ liệu danh sách theo mẫu.');
+
+    // Read the whole selected tab with a response cap so data beyond the supported
+    // rows or columns is rejected rather than being silently left out of the batch.
+    const range = quoteSheet(tab.title);
+    url.searchParams.set('ranges', range);
+    url.searchParams.set(
+      'fields',
+      'sheets(properties(sheetId,title),data(startRow,startColumn,rowData(values(formattedValue,userEnteredValue))))',
+    );
+    const result = await auth.googleRequest(req, url.href, options);
+    const sheet = result?.sheets?.find((item) => item.properties?.sheetId === tab.sheetId);
+    if (sheet?.properties?.title !== tab.title)
+      throw fail(409, 'Trang tính đã thay đổi trong lúc đọc. Hãy xem trước lại.');
+    const { rows, sheetRows } = parseRosterGrid(rosterGridFromSheet(sheet));
+    const source = {
+      id,
+      name: metadata.properties?.title || id,
+      sheetId: tab.sheetId,
+      sheetName: tab.title,
+      range,
+      url: `${sheetUrl(id)}#gid=${tab.sheetId}`,
+    };
+    return { rows, sheetRows, source };
+  }
+  async function previewRosterSheet(req, payload = {}) {
+    const user = rosterCoordinator(req);
+    const semester = rosterSemester(user, payload);
+    const selection = rosterSheetSelection(payload);
+    const loaded = await readRosterSheet(req, selection);
+    const currentUser = rosterCoordinator(req);
+    if (currentUser.id !== user.id) throw fail(403, 'Phiên đăng nhập đã thay đổi.');
+    const { rows, sheetRows, source } = loaded;
+    const preview = store.previewRoster(currentUser, rows, { semester, sheetRows });
+    let previewToken = null;
+    if (!preview.summary.errors) {
+      const encoded = Buffer.from(
+        JSON.stringify({
+          userId: user.id,
+          semester,
+          id: source.id,
+          expiresAt: Date.now() + ROSTER_PREVIEW_TTL,
+          digest: rosterDigest(loaded, preview),
+        }),
+      ).toString('base64url');
+      previewToken = `${encoded}.${signRosterPreview(encoded)}`;
+    }
+    return { ...preview, source, previewToken };
+  }
+  async function commitRosterSheet(req, payload = {}) {
+    const user = rosterCoordinator(req);
+    const semester = rosterSemester(user, payload);
+    const selection = rosterSheetSelection(payload);
+    const token = typeof payload.previewToken === 'string' ? payload.previewToken : '';
+    if (!/^[A-Za-z0-9_-]{1,1536}\.[A-Za-z0-9_-]{43}$/.test(token)) throw staleRosterPreview();
+    const [encoded, signature] = token.split('.');
+    if (!timingSafeEqual(Buffer.from(signature), Buffer.from(signRosterPreview(encoded))))
+      throw staleRosterPreview();
+    const expected = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+    if (
+      expected.userId !== user.id ||
+      expected.semester !== semester ||
+      expected.id !== selection.id ||
+      expected.expiresAt <= Date.now()
+    )
+      throw staleRosterPreview();
+
+    let loaded;
+    try {
+      loaded = await readRosterSheet(req, selection);
+    } catch (error) {
+      if (error.status === 400) throw staleRosterPreview();
+      throw error;
+    }
+    const currentUser = rosterCoordinator(req);
+    if (currentUser.id !== user.id) throw fail(403, 'Phiên đăng nhập đã thay đổi.');
+    const { rows, sheetRows, source } = loaded;
+    const preview = store.previewRoster(currentUser, rows, { semester, sheetRows });
+    if (
+      expected.expiresAt <= Date.now() ||
+      preview.summary.errors ||
+      rosterDigest(loaded, preview) !== expected.digest
+    )
+      throw staleRosterPreview();
+    return store.commitRoster(currentUser, {
+      rows,
+      semester,
+      sheetRows,
+      source,
+      expectedPreview: preview,
+      batchName: payload.batchName || source.name,
+      reason: payload.reason,
+    });
   }
   async function exportReport(req, filters = {}) {
     const user = lecturerFor(req),
@@ -549,5 +747,14 @@ export function createGoogleWorkspace({ auth, store, config = {} }) {
       ...(warnings.length ? { warning: warnings.join(' ') } : {}),
     };
   }
-  return { status, previewSheet, exportReport, listFiles, uploadEvidence, retryEvidence };
+  return {
+    status,
+    previewSheet,
+    previewRosterSheet,
+    commitRosterSheet,
+    exportReport,
+    listFiles,
+    uploadEvidence,
+    retryEvidence,
+  };
 }
